@@ -1,0 +1,271 @@
+{
+  "name": "Twitter Content Scraper",
+  "nodes": [
+    {
+      "parameters": {
+        "url": "https://api.twitterapi.io/twitter/tweet/advanced_search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "SpaceX"
+            },
+            {
+              "name": "queryType",
+              "value": "Latest"
+            }
+          ]
+        },
+        "options": {
+          "pagination": {
+            "pagination": {
+              "paginationMode": "responseContainsNextURL",
+              "nextURL": "=https://api.twitterapi.io/twitter/tweet/advanced_search?cursor={{ $response.body.next_cursor }}",
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ $response.body.has_next_page == false }}",
+              "limitPagesFetched": true,
+              "maxRequests": 10
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -140,
+        -80
+      ],
+      "id": "a665d1b7-8df1-41a7-8f19-3d4ca02110ff",
+      "name": "Get Tweets",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "Twitter API Header Auth"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -360,
+        -80
+      ],
+      "id": "647967f0-3152-4331-aebf-2a2f742d4cca",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Initialize an empty array to collect all tweets\nlet allTweets = [];\n\n// Loop through each input item\nfor (let item of $input.all()) {\n  if (item.json.tweets && Array.isArray(item.json.tweets)) {\n    allTweets = allTweets.concat(item.json.tweets);\n  }\n}\n\n// Function to format the date in a more human-readable way\nfunction formatDate(dateString) {\n  if (!dateString) return '';\n  \n  try {\n    const date = new Date(dateString);\n    return date.toLocaleString('en-US', {\n      year: 'numeric',\n      month: 'long',\n      day: 'numeric',\n      hour: '2-digit',\n      minute: '2-digit'\n    });\n  } catch (error) {\n    console.log(\"Error formatting date:\", error);\n    return dateString;\n  }\n}\n\n// Convert and structure the tweets properly\nconst formattedTweets = allTweets.map(tweet => ({\n  json: {\n    tweetId: tweet.id || '',\n    url: tweet.url || '',\n    content: tweet.text || '',\n    likeCount: tweet.likeCount || 0,\n    retweetCount: tweet.retweetCount || 0,\n    replyCount: tweet.replyCount || 0,\n    quoteCount: tweet.quoteCount || 0,\n    viewCount: tweet.viewCount || 0,\n    createdAt: formatDate(tweet.createdAt)\n  }\n}));\n\n// Output all tweets as separate items\nreturn formattedTweets;\n"
+      },
+      "id": "6ff50654-2e73-4644-a668-9243408f58e1",
+      "name": "Queries and Loops",
+      "type": "n8n-nodes-base.code",
+      "position": [
+        80,
+        -80
+      ],
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": "Twitter Data Spreadsheet",
+          "cachedResultUrl": ""
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": ""
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Tweet ID": "={{ $json.tweetId }}",
+            "URL": "={{ $json.url }}",
+            "Content": "={{ $json.content }}",
+            "Likes": "={{ $json.likeCount }}",
+            "Retweets": "={{ $json.retweetCount }}",
+            "Replies": "={{ $json.replyCount }}",
+            "Quotes": "={{ $json.quoteCount }}",
+            "Views": "={{ $json.viewCount }}",
+            "Date": "={{ $json.createdAt }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Tweet ID",
+              "displayName": "Tweet ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "URL",
+              "displayName": "URL",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Content",
+              "displayName": "Content",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Likes",
+              "displayName": "Likes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Retweets",
+              "displayName": "Retweets",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Replies",
+              "displayName": "Replies",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Quotes",
+              "displayName": "Quotes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Views",
+              "displayName": "Views",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        280,
+        -80
+      ],
+      "id": "d7b589ef-baad-4022-8b89-83bbae1fc4bf",
+      "name": "Tweets Sheets",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    }
+  ],
+  "pinData": {
+    "When clicking ‘Execute workflow’": [
+      {
+        "json": {
+          "name": "First item",
+          "code": 1
+        }
+      },
+      {
+        "json": {
+          "name": "Second item",
+          "code": 2
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Get Tweets": {
+      "main": [
+        [
+          {
+            "node": "Queries and Loops",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Get Tweets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Queries and Loops": {
+      "main": [
+        [
+          {
+            "node": "Tweets Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": ""
+  },
+  "id": "",
+  "tags": []
+}
