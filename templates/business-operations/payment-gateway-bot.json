@@ -22,7 +22,7 @@
       "name": "Checkout Processor",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [460, 300]
+      "position": [520, 300]
     },
     {
       "parameters": {
@@ -50,7 +50,7 @@
       "name": "Check Validation",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [680, 300]
+      "position": [800, 300]
     },
     {
       "parameters": {
@@ -64,7 +64,7 @@
       "name": "Validation Error Response",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [680, 500]
+      "position": [800, 500]
     },
     {
       "parameters": {
@@ -79,7 +79,7 @@
       "name": "Bot Welcome Message",
       "type": "n8n-nodes-base.openAi",
       "typeVersion": 1,
-      "position": [900, 300]
+      "position": [1080, 300]
     },
     {
       "parameters": {
@@ -89,7 +89,7 @@
       "name": "Checkout UI Generator",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1120, 300]
+      "position": [1360, 300]
     },
     {
       "parameters": {
@@ -101,7 +101,7 @@
       "name": "Checkout Response",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [1340, 300]
+      "position": [1640, 300]
     },
     {
       "parameters": {
@@ -124,7 +124,7 @@
       "name": "Payment Processor",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [460, 700]
+      "position": [520, 700]
     },
     {
       "parameters": {
@@ -152,7 +152,7 @@
       "name": "Check Payment Status",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [680, 700]
+      "position": [800, 700]
     },
     {
       "parameters": {
@@ -167,7 +167,7 @@
       "name": "Success Bot Message",
       "type": "n8n-nodes-base.openAi",
       "typeVersion": 1,
-      "position": [900, 600]
+      "position": [1080, 600]
     },
     {
       "parameters": {
@@ -182,7 +182,7 @@
       "name": "Failure Bot Message",
       "type": "n8n-nodes-base.openAi",
       "typeVersion": 1,
-      "position": [900, 800]
+      "position": [1080, 800]
     },
     {
       "parameters": {
@@ -214,7 +214,7 @@
       "name": "Log Transaction",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4,
-      "position": [1120, 700]
+      "position": [1360, 700]
     },
     {
       "parameters": {
@@ -224,7 +224,7 @@
       "name": "Final Response Builder",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1340, 700]
+      "position": [1640, 700]
     },
     {
       "parameters": {
@@ -236,7 +236,7 @@
       "name": "Payment Response",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [1560, 700]
+      "position": [1920, 700]
     },
     {
       "parameters": {
@@ -264,7 +264,7 @@
       "name": "Check High Value Transaction",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1340, 900]
+      "position": [1640, 900]
     },
     {
       "parameters": {
@@ -278,7 +278,7 @@
       "name": "High Value Alert",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.1,
-      "position": [1560, 900]
+      "position": [1920, 900]
     }
   ],
   "connections": {

@@ -32,7 +32,7 @@
       "name": "Fetch Current Inventory",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4,
-      "position": [460, 300]
+      "position": [520, 300]
     },
     {
       "parameters": {
@@ -42,7 +42,7 @@
       "name": "Inventory Analyzer",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [680, 300]
+      "position": [800, 300]
     },
     {
       "parameters": {
@@ -70,7 +70,7 @@
       "name": "Check if Alerts Needed",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [900, 300]
+      "position": [1080, 300]
     },
     {
       "parameters": {
@@ -85,7 +85,7 @@
       "name": "AI Alert Generator",
       "type": "n8n-nodes-base.openAi",
       "typeVersion": 1,
-      "position": [1120, 300]
+      "position": [1360, 300]
     },
     {
       "parameters": {
@@ -99,7 +99,7 @@
       "name": "Send Telegram Alert",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.1,
-      "position": [1340, 300]
+      "position": [1640, 300]
     },
     {
       "parameters": {
@@ -122,7 +122,7 @@
       "name": "Stock Update Processor",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [460, 600]
+      "position": [520, 600]
     },
     {
       "parameters": {
@@ -150,7 +150,7 @@
       "name": "Check Update Validation",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [680, 600]
+      "position": [800, 600]
     },
     {
       "parameters": {
@@ -164,7 +164,7 @@
       "name": "Update Error Response",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [680, 800]
+      "position": [800, 800]
     },
     {
       "parameters": {
@@ -180,7 +180,7 @@
       "name": "Find Product by SKU",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4,
-      "position": [900, 600]
+      "position": [1080, 600]
     },
     {
       "parameters": {
@@ -190,7 +190,7 @@
       "name": "Calculate New Stock",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1120, 600]
+      "position": [1360, 600]
     },
     {
       "parameters": {
@@ -214,7 +214,7 @@
       "name": "Update Inventory Sheet",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4,
-      "position": [1340, 600]
+      "position": [1640, 600]
     },
     {
       "parameters": {
@@ -247,7 +247,7 @@
       "name": "Log Stock Transaction",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4,
-      "position": [1560, 600]
+      "position": [1920, 600]
     },
     {
       "parameters": {
@@ -275,7 +275,7 @@
       "name": "Check Stock Alert",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1340, 800]
+      "position": [1640, 800]
     },
     {
       "parameters": {
@@ -289,7 +289,7 @@
       "name": "Stock Alert Notification",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.1,
-      "position": [1560, 800]
+      "position": [1920, 800]
     },
     {
       "parameters": {
@@ -301,7 +301,7 @@
       "name": "Stock Update Response",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [1780, 600]
+      "position": [2200, 600]
     }
   ],
   "connections": {

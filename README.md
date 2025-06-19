@@ -12,7 +12,7 @@ A comprehensive collection of 22+ practical n8n workflow templates for everyday 
 6. Configure your credentials and API keys
 7. Activate the workflow
 
-## 📂 Template Categories (22+ Templates)
+## 📂 Template Categories (25+ Templates)
 
 ### 🤖 AI Innovation Hub
 - **AI Multi-Agent Chatbot Ideas** - Comprehensive guide for building sophisticated multi-agent AI systems
@@ -30,21 +30,24 @@ A comprehensive collection of 22+ practical n8n workflow templates for everyday 
 - **Discord Bot Automation** - Automated Discord community management
 - **YouTube Content Automation** - Automated video content processing and management
 
-### 📊 Data & Analytics (6 templates)
+### 📊 Data & Analytics (7 templates)
 - **Crypto Portfolio Tracker** - Real-time cryptocurrency portfolio monitoring
 - **Google Sheets Data Sync** - Automated data collection and reporting
 - **Expense Tracker Automation** - Monitor and categorize expenses from emails
 - **File Upload Processor** - Process and analyze uploaded files
 - **Data Backup Automation** - Automated backup of Google services
 - **Social Media Analytics** - Comprehensive social media data analysis
+- **Personal Finance Tracker** - AI-powered expense tracking with bank email integration and weekly reports
 
-### ⚡ Productivity & Workflow (6 templates)
+### ⚡ Productivity & Workflow (8 templates)
 - **AI Customer Support Bot** - Intelligent customer service automation
 - **Meeting Notes Generator** - Auto-transcribe and summarize meetings
 - **Slack Standup Reminder** - Automated team standup reminders
 - **Task Automation & Project Management** - Comprehensive task management system
 - **Smart Home Automation** - Control smart devices via webhooks
 - **Webhook Automation Hub** - Central hub for various automation types
+- **Daily News Digest Automation** - AI-curated personalized news from multiple sources with email/Telegram delivery
+- **Smart Home Energy Monitor** - Real-time energy usage tracking with anomaly detection and optimization recommendations
 
 ### 🛡️ Security & Monitoring (4 templates)
 - **System Health Monitor** - Track server and application status

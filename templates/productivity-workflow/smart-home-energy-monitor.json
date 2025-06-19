@@ -1,0 +1,502 @@
+{
+  "name": "Smart Home Energy Monitor",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/15 * * * *"
+            }
+          ]
+        }
+      },
+      "id": "energy-poll-trigger",
+      "name": "Poll Every 15 Minutes",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "{{ $('Set Device Config').item.json.smart_meter_api_url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "fetch-meter-data",
+      "name": "Fetch Smart Meter Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [460, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "smart-meter-api",
+          "name": "Smart Meter API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "{{ $('Set Device Config').item.json.thermostat_api_url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "fetch-thermostat-data",
+      "name": "Fetch Thermostat Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [480, 320],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "thermostat-api",
+          "name": "Thermostat API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "{{ $('Set Device Config').item.json.weather_api_url }}",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "lat",
+                "value": "{{ $('Set Device Config').item.json.latitude }}"
+              },
+              {
+                "name": "lon",
+                "value": "{{ $('Set Device Config').item.json.longitude }}"
+              },
+              {
+                "name": "appid",
+                "value": "{{ $('Set Device Config').item.json.weather_api_key }}"
+              },
+              {
+                "name": "units",
+                "value": "metric"
+              }
+            ]
+          }
+        }
+      },
+      "id": "fetch-weather-data",
+      "name": "Fetch Weather Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [460, 440]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByIndex",
+        "options": {}
+      },
+      "id": "merge-sensor-data",
+      "name": "Merge All Sensor Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [720, 320]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process and normalize energy data from multiple sources\nconst items = $input.all();\nconst timestamp = new Date().toISOString();\n\n// Extract data from different sources\nconst meterData = items[0]?.json || {};\nconst thermostatData = items[1]?.json || {};\nconst weatherData = items[2]?.json || {};\n\n// Calculate energy metrics\nconst currentUsage = meterData.current_power || 0; // watts\nconst dailyUsage = meterData.daily_kwh || 0; // kWh\nconst monthlyUsage = meterData.monthly_kwh || 0; // kWh\n\n// Thermostat data\nconst indoorTemp = thermostatData.current_temperature || 20;\nconst targetTemp = thermostatData.target_temperature || 22;\nconst hvacMode = thermostatData.mode || 'auto';\nconst hvacRunning = thermostatData.running || false;\n\n// Weather data\nconst outdoorTemp = weatherData.main?.temp || 15;\nconst humidity = weatherData.main?.humidity || 50;\nconst weatherCondition = weatherData.weather?.[0]?.main || 'Clear';\n\n// Calculate efficiency metrics\nconst tempDifference = Math.abs(indoorTemp - outdoorTemp);\nconst hvacEfficiency = hvacRunning ? (currentUsage / tempDifference) : 0;\n\n// Detect anomalies (simple threshold-based)\nconst avgUsage = 2500; // watts - should be calculated from historical data\nconst usageAnomaly = currentUsage > (avgUsage * 1.5);\nconst tempAnomaly = Math.abs(indoorTemp - targetTemp) > 3;\n\n// Energy cost calculation (example rate: $0.12/kWh)\nconst energyRate = 0.12;\nconst dailyCost = dailyUsage * energyRate;\nconst monthlyCost = monthlyUsage * energyRate;\n\n// Create structured output\nconst processedData = {\n  timestamp,\n  energy: {\n    current_usage_watts: currentUsage,\n    daily_usage_kwh: dailyUsage,\n    monthly_usage_kwh: monthlyUsage,\n    daily_cost_usd: Math.round(dailyCost * 100) / 100,\n    monthly_cost_usd: Math.round(monthlyCost * 100) / 100\n  },\n  climate: {\n    indoor_temp_c: indoorTemp,\n    outdoor_temp_c: outdoorTemp,\n    target_temp_c: targetTemp,\n    humidity_percent: humidity,\n    hvac_mode: hvacMode,\n    hvac_running: hvacRunning,\n    temp_difference: tempDifference\n  },\n  efficiency: {\n    hvac_efficiency: Math.round(hvacEfficiency * 100) / 100,\n    weather_condition: weatherCondition\n  },\n  anomalies: {\n    high_usage: usageAnomaly,\n    temp_deviation: tempAnomaly,\n    any_detected: usageAnomaly || tempAnomaly\n  },\n  recommendations: []\n};\n\n// Generate recommendations\nif (usageAnomaly) {\n  processedData.recommendations.push('High energy usage detected. Check for devices left on or HVAC issues.');\n}\n\nif (tempAnomaly) {\n  processedData.recommendations.push('Large temperature deviation detected. Consider adjusting thermostat settings.');\n}\n\nif (tempDifference > 15 && hvacRunning) {\n  processedData.recommendations.push('Large indoor/outdoor temperature difference. Consider optimizing HVAC schedule.');\n}\n\nif (humidity > 70) {\n  processedData.recommendations.push('High humidity detected. Consider using dehumidifier to reduce HVAC load.');\n}\n\nreturn { json: processedData };"
+      },
+      "id": "process-energy-data",
+      "name": "Process Energy Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 320]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "energy_readings",
+        "columns": "timestamp, current_usage_watts, daily_usage_kwh, monthly_usage_kwh, indoor_temp, outdoor_temp, humidity, hvac_running, anomaly_detected",
+        "additionalFields": {}
+      },
+      "id": "save-energy-data",
+      "name": "Save to Database",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1200, 320],
+      "credentials": {
+        "postgres": {
+          "id": "energy-db",
+          "name": "Energy Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "{{ $json.anomalies.any_detected }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combineOperation": "any"
+        },
+        "options": {}
+      },
+      "id": "anomaly-filter",
+      "name": "Check for Anomalies",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [1120, 520]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "{{ $('Set User Config').item.json.telegram_chat_id }}",
+        "text": "⚡ *Energy Anomaly Alert*\n\n🏠 Current Usage: {{ $json.energy.current_usage_watts }}W\n🌡️ Indoor: {{ $json.climate.indoor_temp_c }}°C\n🌤️ Outdoor: {{ $json.climate.outdoor_temp_c }}°C\n💰 Daily Cost: ${{ $json.energy.daily_cost_usd }}\n\n🔍 *Issues Detected:*\n{{ $json.anomalies.high_usage ? '• High energy usage\n' : '' }}{{ $json.anomalies.temp_deviation ? '• Temperature deviation\n' : '' }}\n💡 *Recommendations:*\n{{ $json.recommendations.map(r => '• ' + r).join('\n') }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "send-anomaly-alert",
+      "name": "Send Anomaly Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1440, 520],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 18 * * *"
+            }
+          ]
+        }
+      },
+      "id": "daily-report-trigger",
+      "name": "Daily Report (6PM)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 700]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  DATE(timestamp) as date,\n  AVG(current_usage_watts) as avg_usage,\n  MAX(current_usage_watts) as peak_usage,\n  AVG(indoor_temp) as avg_indoor_temp,\n  AVG(outdoor_temp) as avg_outdoor_temp,\n  SUM(CASE WHEN anomaly_detected THEN 1 ELSE 0 END) as anomaly_count\nFROM energy_readings \nWHERE timestamp >= CURRENT_DATE\nGROUP BY DATE(timestamp)\nORDER BY date DESC\nLIMIT 7;",
+        "additionalFields": {}
+      },
+      "id": "daily-energy-summary",
+      "name": "Generate Daily Summary",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [460, 700],
+      "credentials": {
+        "postgres": {
+          "id": "energy-db",
+          "name": "Energy Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "options": {
+          "temperature": 0.7,
+          "maxTokens": 1000
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are an energy efficiency expert. Create comprehensive daily energy reports with insights, recommendations, and actionable tips for reducing energy consumption and costs."
+            },
+            {
+              "role": "user",
+              "content": "Create a daily energy report from this data: {{ JSON.stringify($json) }}"
+            }
+          ]
+        }
+      },
+      "id": "generate-energy-report",
+      "name": "Generate Energy Report",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1,
+      "position": [680, 700],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-credentials",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "message": {
+          "to": "{{ $('Set User Config').item.json.user_email }}",
+          "subject": "⚡ Daily Energy Report - {{ $now.toFormat('MMMM dd, yyyy') }}",
+          "body": "<html><body style='font-family: Arial, sans-serif; line-height: 1.6; color: #333;'><div style='max-width: 600px; margin: 0 auto; padding: 20px;'><h1 style='color: #f39c12; border-bottom: 2px solid #e67e22; padding-bottom: 10px;'>⚡ Smart Home Energy Report</h1>{{ $('Generate Energy Report').item.json.response }}<hr style='margin: 30px 0; border: none; border-top: 1px solid #eee;'><p style='font-size: 12px; color: #7f8c8d; text-align: center;'>Generated by your Smart Home Energy Monitor • <a href='#' style='color: #f39c12;'>View Dashboard</a></p></div></body></html>",
+          "bodyType": "html"
+        },
+        "options": {}
+      },
+      "id": "send-energy-report",
+      "name": "Send Daily Report",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [900, 700],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-oauth",
+          "name": "Gmail OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "smart_meter_api_url",
+              "value": "https://api.smartmeter.com/v1/current"
+            },
+            {
+              "name": "thermostat_api_url",
+              "value": "https://api.nest.com/v1/devices/thermostats"
+            },
+            {
+              "name": "weather_api_url",
+              "value": "https://api.openweathermap.org/data/2.5/weather"
+            },
+            {
+              "name": "latitude",
+              "value": "40.7128"
+            },
+            {
+              "name": "longitude",
+              "value": "-74.0060"
+            },
+            {
+              "name": "weather_api_key",
+              "value": "your-openweather-api-key"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "device-config",
+      "name": "Set Device Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [240, 480]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "user_email",
+              "value": "your-email@example.com"
+            },
+            {
+              "name": "telegram_chat_id",
+              "value": "your-telegram-chat-id"
+            },
+            {
+              "name": "energy_rate_per_kwh",
+              "value": "0.12"
+            },
+            {
+              "name": "usage_alert_threshold",
+              "value": "3000"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "user-config",
+      "name": "Set User Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [240, 880]
+    }
+  ],
+  "connections": {
+    "Poll Every 15 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Fetch Smart Meter Data",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Thermostat Data",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Weather Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Smart Meter Data": {
+      "main": [
+        [
+          {
+            "node": "Merge All Sensor Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Thermostat Data": {
+      "main": [
+        [
+          {
+            "node": "Merge All Sensor Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Fetch Weather Data": {
+      "main": [
+        [
+          {
+            "node": "Merge All Sensor Data",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge All Sensor Data": {
+      "main": [
+        [
+          {
+            "node": "Process Energy Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Energy Data": {
+      "main": [
+        [
+          {
+            "node": "Save to Database",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check for Anomalies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check for Anomalies": {
+      "main": [
+        [
+          {
+            "node": "Send Anomaly Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily Report (6PM)": {
+      "main": [
+        [
+          {
+            "node": "Generate Daily Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Daily Summary": {
+      "main": [
+        [
+          {
+            "node": "Generate Energy Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Energy Report": {
+      "main": [
+        [
+          {
+            "node": "Send Daily Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "smart-home-energy-monitor"
+  },
+  "id": "smart-home-energy-monitor",
+  "tags": [
+    {
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "id": "smart-home",
+      "name": "smart-home"
+    },
+    {
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "id": "energy",
+      "name": "energy"
+    },
+    {
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "id": "monitoring",
+      "name": "monitoring"
+    }
+  ]
+}

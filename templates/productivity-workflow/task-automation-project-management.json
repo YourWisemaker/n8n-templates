@@ -22,7 +22,7 @@
       "name": "Parse Task Data",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [460, 300]
+      "position": [520, 300]
     },
     {
       "parameters": {
@@ -50,7 +50,7 @@
       "name": "Is Valid Task?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [680, 300]
+      "position": [800, 300]
     },
     {
       "parameters": {
@@ -234,7 +234,7 @@
       "name": "Save Task",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4,
-      "position": [900, 300],
+      "position": [1080, 300],
       "credentials": {
         "googleSheetsOAuth2Api": {
           "id": "google-sheets-credential",
@@ -268,7 +268,7 @@
       "name": "Has Assignee Email?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1120, 300]
+      "position": [1360, 300]
     },
     {
       "parameters": {

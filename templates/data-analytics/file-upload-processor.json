@@ -24,7 +24,7 @@
       "name": "Parse File Data",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [460, 300]
+      "position": [520, 300]
     },
     {
       "parameters": {
@@ -52,7 +52,7 @@
       "name": "Is Valid File Size?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [680, 300]
+      "position": [800, 300]
     },
     {
       "parameters": {
@@ -116,7 +116,7 @@
       "name": "Process Spreadsheet",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1340, 200]
+      "position": [1640, 200]
     },
     {
       "parameters": {

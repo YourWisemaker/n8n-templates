@@ -22,7 +22,7 @@
       "name": "Parse Lead Data",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [460, 300]
+      "position": [520, 300]
     },
     {
       "parameters": {
@@ -50,7 +50,7 @@
       "name": "Is Valid Lead?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [680, 300]
+      "position": [800, 300]
     },
     {
       "parameters": {
@@ -79,7 +79,7 @@
       "name": "Enrich Lead Data",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [900, 300],
+      "position": [800, 300],
       "continueOnFail": true
     },
     {
@@ -90,7 +90,7 @@
       "name": "Calculate Lead Score",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1120, 300]
+      "position": [1360, 300]
     },
     {
       "parameters": {
@@ -330,7 +330,7 @@
       "name": "Save Lead",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4,
-      "position": [1340, 300],
+      "position": [1080, 300],
       "credentials": {
         "googleSheetsOAuth2Api": {
           "id": "google-sheets-credential",
@@ -368,7 +368,7 @@
       "name": "Generate Welcome Email",
       "type": "n8n-nodes-base.openAi",
       "typeVersion": 1,
-      "position": [1560, 300],
+      "position": [1640, 300],
       "credentials": {
         "openAiApi": {
           "id": "openai-credential",
@@ -393,7 +393,7 @@
       "name": "Send Welcome Email",
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2,
-      "position": [1780, 300],
+      "position": [1920, 300],
       "credentials": {
         "gmailOAuth2": {
           "id": "gmail-oauth-credential",
@@ -427,7 +427,7 @@
       "name": "High Quality Lead?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [2000, 200]
+      "position": [2200, 200]
     },
     {
       "parameters": {
@@ -443,7 +443,7 @@
       "name": "Alert Sales Team",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1,
-      "position": [2220, 200],
+      "position": [2480, 200],
       "credentials": {
         "telegramApi": {
           "id": "telegram-bot-credential",
@@ -465,7 +465,7 @@
       "name": "Notify Marketing",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1,
-      "position": [2000, 400],
+      "position": [2200, 400],
       "credentials": {
         "telegramApi": {
           "id": "telegram-bot-credential",
@@ -526,7 +526,7 @@
       "name": "Get Nurture Leads",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4,
-      "position": [460, 600],
+      "position": [520, 600],
       "credentials": {
         "googleSheetsOAuth2Api": {
           "id": "google-sheets-credential",
@@ -564,7 +564,7 @@
       "name": "Generate Nurture Email",
       "type": "n8n-nodes-base.openAi",
       "typeVersion": 1,
-      "position": [680, 600],
+      "position": [800, 600],
       "credentials": {
         "openAiApi": {
           "id": "openai-credential",
@@ -589,7 +589,7 @@
       "name": "Send Nurture Email",
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2,
-      "position": [900, 600],
+      "position": [1080, 600],
       "credentials": {
         "gmailOAuth2": {
           "id": "gmail-oauth-credential",
@@ -607,7 +607,7 @@
       "name": "Return Response",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [2220, 400]
+      "position": [2480, 400]
     }
   ],
   "connections": {

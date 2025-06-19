@@ -22,7 +22,7 @@
       "name": "Parse Campaign Data",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [460, 300]
+      "position": [520, 300]
     },
     {
       "parameters": {
@@ -50,7 +50,7 @@
       "name": "Is Valid Campaign?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [680, 300]
+      "position": [800, 300]
     },
     {
       "parameters": {
@@ -78,7 +78,7 @@
       "name": "Is Test Mode?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [900, 300]
+      "position": [1080, 300]
     },
     {
       "parameters": {

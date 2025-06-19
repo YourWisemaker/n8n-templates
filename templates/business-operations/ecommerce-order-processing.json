@@ -21,7 +21,7 @@
       "name": "Parse Order",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [460, 300]
+      "position": [520, 300]
     },
     {
       "parameters": {
@@ -48,7 +48,7 @@
       "name": "Check Payment Status",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [680, 300]
+      "position": [800, 300]
     },
     {
       "parameters": {
@@ -58,7 +58,7 @@
       "name": "Check Inventory",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [900, 200]
+      "position": [1080, 200]
     },
     {
       "parameters": {
@@ -156,7 +156,7 @@
       "name": "Save Order",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4,
-      "position": [1120, 300]
+      "position": [1360, 300]
     },
     {
       "parameters": {
@@ -183,7 +183,7 @@
       "name": "Check Fulfillment",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1340, 300]
+      "position": [1640, 300]
     },
     {
       "parameters": {
@@ -387,7 +387,7 @@
       "name": "Get Daily Orders",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4,
-      "position": [460, 600]
+      "position": [520, 600]
     },
     {
       "parameters": {
@@ -397,7 +397,7 @@
       "name": "Generate Daily Summary",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [680, 600]
+      "position": [800, 600]
     },
     {
       "parameters": {
@@ -412,7 +412,7 @@
       "name": "Send Daily Summary",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.1,
-      "position": [900, 600]
+      "position": [1080, 600]
     }
   ],
   "pinData": {},

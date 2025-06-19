@@ -40,7 +40,7 @@
       "name": "Validate Invoice Email",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [460, 300]
+      "position": [520, 300]
     },
     {
       "parameters": {
@@ -68,7 +68,7 @@
       "name": "Is Valid Invoice?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [680, 300]
+      "position": [800, 300]
     },
     {
       "parameters": {
@@ -78,7 +78,7 @@
       "name": "Process Attachments",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [900, 300]
+      "position": [1080, 300]
     },
     {
       "parameters": {
@@ -99,7 +99,7 @@
       "name": "Upload to Drive",
       "type": "n8n-nodes-base.googleDrive",
       "typeVersion": 3,
-      "position": [1120, 300],
+      "position": [1360, 300],
       "credentials": {
         "googleDriveOAuth2Api": {
           "id": "google-drive-credential",
@@ -137,7 +137,7 @@
       "name": "Extract Invoice Data",
       "type": "n8n-nodes-base.openAi",
       "typeVersion": 1,
-      "position": [1340, 300],
+      "position": [1640, 300],
       "credentials": {
         "openAiApi": {
           "id": "openai-credential",
@@ -153,7 +153,7 @@
       "name": "Process Invoice Data",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1560, 300]
+      "position": [1920, 300]
     },
     {
       "parameters": {
@@ -337,7 +337,7 @@
       "name": "Save to Invoices Sheet",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4,
-      "position": [1780, 300],
+      "position": [2200, 300],
       "credentials": {
         "googleSheetsOAuth2Api": {
           "id": "google-sheets-credential",
@@ -371,7 +371,7 @@
       "name": "High Priority?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [2000, 200]
+      "position": [2480, 200]
     },
     {
       "parameters": {
@@ -387,7 +387,7 @@
       "name": "Alert High Priority",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1,
-      "position": [2220, 200],
+      "position": [2760, 200],
       "credentials": {
         "telegramApi": {
           "id": "telegram-bot-credential",
@@ -409,7 +409,7 @@
       "name": "Send Notification",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1,
-      "position": [2000, 400],
+      "position": [2480, 400],
       "credentials": {
         "telegramApi": {
           "id": "telegram-bot-credential",
@@ -429,7 +429,7 @@
       "name": "Mark Email Processed",
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2,
-      "position": [2220, 400],
+      "position": [2760, 400],
       "credentials": {
         "gmailOAuth2": {
           "id": "gmail-oauth-credential",

@@ -1,0 +1,456 @@
+{
+  "name": "Personal Finance Tracker",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "feedUrl": "{{ $('Set Bank Config').item.json.email_imap_url }}",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "email-trigger",
+      "name": "Monitor Bank Emails",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "credentials": {
+        "imap": {
+          "id": "bank-email-imap",
+          "name": "Bank Email IMAP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "{{ $json.subject }}",
+              "rightValue": "transaction",
+              "operator": {
+                "type": "string",
+                "operation": "contains",
+                "caseSensitive": false
+              }
+            },
+            {
+              "leftValue": "{{ $json.subject }}",
+              "rightValue": "payment",
+              "operator": {
+                "type": "string",
+                "operation": "contains",
+                "caseSensitive": false
+              }
+            },
+            {
+              "leftValue": "{{ $json.subject }}",
+              "rightValue": "purchase",
+              "operator": {
+                "type": "string",
+                "operation": "contains",
+                "caseSensitive": false
+              }
+            }
+          ],
+          "combineOperation": "any"
+        },
+        "options": {}
+      },
+      "id": "filter-transactions",
+      "name": "Filter Transaction Emails",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "options": {
+          "temperature": 0.3,
+          "maxTokens": 500
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a financial data extraction expert. Extract transaction details from bank notification emails and return structured JSON data with fields: amount (number), merchant (string), category (string), date (YYYY-MM-DD), description (string). Categories should be: food, transport, shopping, bills, entertainment, healthcare, other."
+            },
+            {
+              "role": "user",
+              "content": "Extract transaction data from this email: {{ $json.textPlain }}"
+            }
+          ]
+        }
+      },
+      "id": "extract-transaction",
+      "name": "Extract Transaction Data",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1,
+      "position": [720, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-credentials",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse AI response and structure transaction data\nconst aiResponse = $input.item(0).json.response;\nlet transactionData;\n\ntry {\n  // Try to parse JSON from AI response\n  transactionData = JSON.parse(aiResponse);\n} catch (error) {\n  // If parsing fails, extract data manually\n  transactionData = {\n    amount: null,\n    merchant: null,\n    category: 'other',\n    date: new Date().toISOString().split('T')[0],\n    description: aiResponse\n  };\n}\n\n// Add metadata\ntransactionData.id = `txn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;\ntransactionData.processed_at = new Date().toISOString();\ntransactionData.source = 'email';\n\n// Validate and clean data\nif (transactionData.amount && typeof transactionData.amount === 'string') {\n  transactionData.amount = parseFloat(transactionData.amount.replace(/[^\\d.-]/g, ''));\n}\n\nreturn { json: transactionData };"
+      },
+      "id": "process-transaction",
+      "name": "Process Transaction Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "transactions",
+        "columns": "id, amount, merchant, category, date, description, processed_at, source",
+        "additionalFields": {}
+      },
+      "id": "save-to-db",
+      "name": "Save to Database",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1200, 300],
+      "credentials": {
+        "postgres": {
+          "id": "finance-db",
+          "name": "Finance Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * 1"
+            }
+          ]
+        }
+      },
+      "id": "weekly-report-trigger",
+      "name": "Weekly Report (Monday 9AM)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 650]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  category,\n  COUNT(*) as transaction_count,\n  SUM(amount) as total_amount,\n  AVG(amount) as avg_amount\nFROM transactions \nWHERE date >= CURRENT_DATE - INTERVAL '7 days'\nGROUP BY category\nORDER BY total_amount DESC;",
+        "additionalFields": {}
+      },
+      "id": "weekly-summary",
+      "name": "Generate Weekly Summary",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [480, 650],
+      "credentials": {
+        "postgres": {
+          "id": "finance-db",
+          "name": "Finance Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "options": {
+          "temperature": 0.7,
+          "maxTokens": 800
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a personal finance advisor. Create a comprehensive weekly financial report based on transaction data. Include spending analysis, category breakdowns, insights, and actionable recommendations for better financial management."
+            },
+            {
+              "role": "user",
+              "content": "Create a weekly finance report from this data: {{ JSON.stringify($json) }}"
+            }
+          ]
+        }
+      },
+      "id": "generate-report",
+      "name": "Generate Finance Report",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1,
+      "position": [720, 650],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-credentials",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "message": {
+          "to": "{{ $('Set User Config').item.json.user_email }}",
+          "subject": "💰 Weekly Finance Report - {{ $now.toFormat('MMMM dd, yyyy') }}",
+          "body": "<html><body style='font-family: Arial, sans-serif; line-height: 1.6; color: #333;'><div style='max-width: 600px; margin: 0 auto; padding: 20px;'><h1 style='color: #27ae60; border-bottom: 2px solid #2ecc71; padding-bottom: 10px;'>💰 Weekly Finance Report</h1>{{ $('Generate Finance Report').item.json.response }}<hr style='margin: 30px 0; border: none; border-top: 1px solid #eee;'><p style='font-size: 12px; color: #7f8c8d; text-align: center;'>Generated by your Personal Finance Tracker • <a href='#' style='color: #27ae60;'>View Dashboard</a></p></div></body></html>",
+          "bodyType": "html"
+        },
+        "options": {}
+      },
+      "id": "send-report",
+      "name": "Send Weekly Report",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [960, 650],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-oauth",
+          "name": "Gmail OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "email_imap_url",
+              "value": "imap.gmail.com"
+            },
+            {
+              "name": "bank_email_filter",
+              "value": "from:notifications@yourbank.com"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "bank-config",
+      "name": "Set Bank Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [240, 480]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "user_email",
+              "value": "your-email@example.com"
+            },
+            {
+              "name": "spending_limit_weekly",
+              "value": "500"
+            },
+            {
+              "name": "alert_threshold",
+              "value": "100"
+            },
+            {
+              "name": "telegram_chat_id",
+              "value": "your-telegram-chat-id"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "user-config",
+      "name": "Set User Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [460, 780]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "{{ $json.amount }}",
+              "rightValue": "{{ $('Set User Config').item.json.alert_threshold }}",
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combineOperation": "any"
+        },
+        "options": {}
+      },
+      "id": "large-transaction-filter",
+      "name": "Check Large Transaction",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [1120, 480]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "{{ $('Set User Config').item.json.telegram_chat_id }}",
+        "text": "🚨 *Large Transaction Alert*\n\n💰 Amount: ${{ $json.amount }}\n🏪 Merchant: {{ $json.merchant }}\n📅 Date: {{ $json.date }}\n🏷️ Category: {{ $json.category }}\n\n_Automated alert from your Finance Tracker_",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "alert-telegram",
+      "name": "Send Alert to Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1340, 480],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot",
+          "name": "Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Monitor Bank Emails": {
+      "main": [
+        [
+          {
+            "node": "Filter Transaction Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Transaction Emails": {
+      "main": [
+        [
+          {
+            "node": "Extract Transaction Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Transaction Data": {
+      "main": [
+        [
+          {
+            "node": "Process Transaction Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Transaction Data": {
+      "main": [
+        [
+          {
+            "node": "Save to Database",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check Large Transaction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Weekly Report (Monday 9AM)": {
+      "main": [
+        [
+          {
+            "node": "Generate Weekly Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Weekly Summary": {
+      "main": [
+        [
+          {
+            "node": "Generate Finance Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Finance Report": {
+      "main": [
+        [
+          {
+            "node": "Send Weekly Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Large Transaction": {
+      "main": [
+        [
+          {
+            "node": "Send Alert to Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "personal-finance-tracker"
+  },
+  "id": "personal-finance-tracker",
+  "tags": [
+    {
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "id": "finance",
+      "name": "finance"
+    },
+    {
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "id": "ai",
+      "name": "ai"
+    },
+    {
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "id": "automation",
+      "name": "automation"
+    }
+  ]
+}

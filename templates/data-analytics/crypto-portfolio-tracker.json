@@ -26,7 +26,7 @@
       "name": "Portfolio Setup",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [460, 300]
+      "position": [520, 300]
     },
     {
       "parameters": {
@@ -39,7 +39,7 @@
       "name": "Fetch Crypto Prices",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
-      "position": [680, 300]
+      "position": [800, 300]
     },
     {
       "parameters": {
@@ -91,7 +91,7 @@
       "name": "Save Portfolio History",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4,
-      "position": [1340, 300]
+      "position": [1640, 300]
     },
     {
       "parameters": {

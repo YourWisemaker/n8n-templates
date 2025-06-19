@@ -26,7 +26,7 @@
       "name": "Content Generator",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [460, 300]
+      "position": [520, 300]
     },
     {
       "parameters": {
@@ -41,7 +41,7 @@
       "name": "AI Content Enhancer",
       "type": "n8n-nodes-base.openAi",
       "typeVersion": 1,
-      "position": [680, 300]
+      "position": [800, 300]
     },
     {
       "parameters": {
@@ -51,7 +51,7 @@
       "name": "Content Processor",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [900, 300]
+      "position": [1080, 300]
     },
     {
       "parameters": {
@@ -75,7 +75,7 @@
       "name": "Post to LinkedIn",
       "type": "n8n-nodes-base.linkedIn",
       "typeVersion": 1,
-      "position": [1120, 300]
+      "position": [1360, 300]
     },
     {
       "parameters": {

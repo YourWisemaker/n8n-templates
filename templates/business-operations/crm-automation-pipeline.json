@@ -21,7 +21,7 @@
       "name": "Process Lead Data",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [460, 300]
+      "position": [520, 300]
     },
     {
       "parameters": {
@@ -48,7 +48,7 @@
       "name": "Validate Data",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [680, 300]
+      "position": [800, 300]
     },
     {
       "parameters": {
@@ -76,7 +76,7 @@
       "name": "Enrich with Clearbit",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
-      "position": [900, 180]
+      "position": [1080, 180]
     },
     {
       "parameters": {
@@ -86,7 +86,7 @@
       "name": "Merge Enriched Data",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1120, 300]
+      "position": [1360, 300]
     },
     {
       "parameters": {
@@ -157,7 +157,7 @@
       "name": "Save to CRM Database",
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4,
-      "position": [1340, 300]
+      "position": [1640, 300]
     },
     {
       "parameters": {
@@ -184,7 +184,7 @@
       "name": "Check if Hot Lead",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1560, 300]
+      "position": [1920, 300]
     },
     {
       "parameters": {
@@ -205,7 +205,7 @@
       "name": "Generate Welcome Email",
       "type": "@n8n/n8n-nodes-langchain.openAi",
       "typeVersion": 1,
-      "position": [1780, 180]
+      "position": [2200, 180]
     },
     {
       "parameters": {
@@ -222,7 +222,7 @@
       "name": "Send Welcome Email",
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.1,
-      "position": [2000, 180]
+      "position": [2480, 180]
     },
     {
       "parameters": {
@@ -237,7 +237,7 @@
       "name": "Notify Sales Team",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.1,
-      "position": [1780, 420]
+      "position": [2200, 420]
     },
     {
       "parameters": {
@@ -252,7 +252,7 @@
       "name": "General Lead Notification",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.1,
-      "position": [1560, 500]
+      "position": [2480, 500]
     },
     {
       "parameters": {
@@ -263,7 +263,7 @@
       "name": "Webhook Response",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [2220, 300]
+      "position": [2760, 300]
     },
     {
       "parameters": {

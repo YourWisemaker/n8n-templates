@@ -26,7 +26,7 @@
       "name": "Setup Backup Configuration",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [460, 300]
+      "position": [520, 300]
     },
     {
       "parameters": {
@@ -69,7 +69,7 @@
       "name": "Backup Gmail Attachments",
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.1,
-      "position": [680, 300]
+      "position": [800, 300]
     },
     {
       "parameters": {
@@ -99,7 +99,7 @@
       "name": "Process Backup Data",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [900, 300]
+      "position": [1080, 300]
     },
     {
       "parameters": {
