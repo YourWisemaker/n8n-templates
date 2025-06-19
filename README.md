@@ -1,4 +1,13 @@
-# n8n Workflow Templates Collection
+# n8n Templates Collection
+
+<div align="center">
+  <img src="templates/imagen8n.png" alt="n8n Templates" width="200" height="200">
+  
+  ![Templates](https://img.shields.io/badge/Templates-28+-blue)
+  ![License](https://img.shields.io/badge/License-MIT-green)
+  ![n8n](https://img.shields.io/badge/n8n-Compatible-orange)
+  ![Automation](https://img.shields.io/badge/Automation-Ready-brightgreen)
+</div>
 
 A comprehensive collection of 22+ practical n8n workflow templates for everyday automation needs, plus innovative AI multi-agent system ideas. These templates are designed to save time and boost productivity by automating common tasks across various platforms and services.
 
