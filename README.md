@@ -12,7 +12,7 @@ A comprehensive collection of 22+ practical n8n workflow templates for everyday 
 6. Configure your credentials and API keys
 7. Activate the workflow
 
-## 📂 Template Categories (27+ Templates)
+## 📂 Template Categories (28+ Templates)
 
 ### 🤖 AI Innovation Hub
 - **AI Multi-Agent Chatbot Ideas** - Comprehensive guide for building sophisticated multi-agent AI systems
@@ -22,13 +22,14 @@ A comprehensive collection of 22+ practical n8n workflow templates for everyday 
 - **Gmail AI Auto-Responder** - Automatically generate and save draft replies using AI
 - **Email Marketing Automation** - Automated email campaigns with AI-generated content
 
-### 💬 Messaging & Social (5 templates)
+### 💬 Messaging & Social (6 templates)
 - **Telegram AI Assistant** - Multi-purpose AI bot with voice and text support
 - **Telegram AI Image Generator** - AI-powered image generation with DALL-E 3 and Whisper
 - **Social Media Manager** - AI-enhanced social media content management
 - **Social Media Scheduler** - Cross-platform posting automation
 - **Discord Bot Automation** - Automated Discord community management
 - **YouTube Content Automation** - Automated video content processing and management
+- **Twitter Content Scraper** - Advanced Twitter/X content scraping with analytics and Google Sheets integration
 
 ### 📊 Data & Analytics (9 templates)
 - **Crypto Portfolio Tracker** - Real-time cryptocurrency portfolio monitoring
