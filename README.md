@@ -12,7 +12,7 @@ A comprehensive collection of 22+ practical n8n workflow templates for everyday 
 6. Configure your credentials and API keys
 7. Activate the workflow
 
-## 📂 Template Categories (25+ Templates)
+## 📂 Template Categories (27+ Templates)
 
 ### 🤖 AI Innovation Hub
 - **AI Multi-Agent Chatbot Ideas** - Comprehensive guide for building sophisticated multi-agent AI systems
@@ -30,7 +30,7 @@ A comprehensive collection of 22+ practical n8n workflow templates for everyday 
 - **Discord Bot Automation** - Automated Discord community management
 - **YouTube Content Automation** - Automated video content processing and management
 
-### 📊 Data & Analytics (7 templates)
+### 📊 Data & Analytics (9 templates)
 - **Crypto Portfolio Tracker** - Real-time cryptocurrency portfolio monitoring
 - **Google Sheets Data Sync** - Automated data collection and reporting
 - **Expense Tracker Automation** - Monitor and categorize expenses from emails
@@ -38,6 +38,8 @@ A comprehensive collection of 22+ practical n8n workflow templates for everyday 
 - **Data Backup Automation** - Automated backup of Google services
 - **Social Media Analytics** - Comprehensive social media data analysis
 - **Personal Finance Tracker** - AI-powered expense tracking with bank email integration and weekly reports
+- **Strava Daily Activity Tracker** - Automated daily Strava activity summaries with goal tracking and notifications
+- **Strava Weekly Training Report** - Comprehensive weekly training analytics with Google Sheets logging and performance insights
 
 ### ⚡ Productivity & Workflow (8 templates)
 - **AI Customer Support Bot** - Intelligent customer service automation

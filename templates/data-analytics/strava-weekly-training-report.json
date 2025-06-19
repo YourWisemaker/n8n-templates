@@ -1,0 +1,356 @@
+{
+  "name": "Strava Weekly Training Report",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * 1"
+            }
+          ]
+        }
+      },
+      "id": "weekly-trigger",
+      "name": "Every Monday at 9 AM",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "strava_access_token",
+              "value": "YOUR_STRAVA_ACCESS_TOKEN"
+            },
+            {
+              "name": "athlete_id",
+              "value": "YOUR_ATHLETE_ID"
+            },
+            {
+              "name": "google_sheets_id",
+              "value": "YOUR_GOOGLE_SHEETS_ID"
+            },
+            {
+              "name": "telegram_bot_token",
+              "value": "YOUR_TELEGRAM_BOT_TOKEN"
+            },
+            {
+              "name": "telegram_chat_id",
+              "value": "YOUR_TELEGRAM_CHAT_ID"
+            },
+            {
+              "name": "email_recipient",
+              "value": "your-email@example.com"
+            }
+          ],
+          "number": [
+            {
+              "name": "weekly_distance_goal",
+              "value": 50
+            },
+            {
+              "name": "weekly_time_goal_hours",
+              "value": 5
+            },
+            {
+              "name": "days_back",
+              "value": 7
+            }
+          ]
+        }
+      },
+      "id": "config-node",
+      "name": "Set Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://www.strava.com/api/v3/athlete/activities",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "after",
+                "value": "{{ Math.floor((new Date().getTime() - ({{ $('Set Configuration').item.json.days_back }} * 24 * 60 * 60 * 1000)) / 1000) }}"
+              },
+              {
+                "name": "per_page",
+                "value": "50"
+              }
+            ]
+          },
+          "headers": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{ $('Set Configuration').item.json.strava_access_token }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "fetch-activities",
+      "name": "Fetch Weekly Activities",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "url": "https://www.strava.com/api/v3/athletes/{{ $('Set Configuration').item.json.athlete_id }}/stats",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "headers": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{ $('Set Configuration').item.json.strava_access_token }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "fetch-athlete-stats",
+      "name": "Fetch Athlete Stats",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByIndex",
+        "options": {}
+      },
+      "id": "merge-data",
+      "name": "Merge Activities and Stats",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const activities = $input.all()[0].json;\nconst athleteStats = $input.all()[1].json;\nconst config = $('Set Configuration').item.json;\n\n// Initialize counters\nlet totalDistance = 0;\nlet totalTime = 0;\nlet totalElevation = 0;\nlet totalActivities = 0;\nconst activityTypes = {};\nconst dailyStats = {};\nconst weeklyActivities = [];\n\n// Process each activity\nactivities.forEach(activity => {\n  const distanceKm = activity.distance / 1000;\n  const timeHours = activity.moving_time / 3600;\n  const date = new Date(activity.start_date).toLocaleDateString();\n  const type = activity.sport_type || activity.type;\n  \n  totalDistance += distanceKm;\n  totalTime += activity.moving_time;\n  totalElevation += activity.total_elevation_gain || 0;\n  totalActivities++;\n  \n  // Count by activity type\n  activityTypes[type] = (activityTypes[type] || 0) + 1;\n  \n  // Daily stats\n  if (!dailyStats[date]) {\n    dailyStats[date] = { distance: 0, time: 0, activities: 0 };\n  }\n  dailyStats[date].distance += distanceKm;\n  dailyStats[date].time += timeHours;\n  dailyStats[date].activities++;\n  \n  // Store activity details\n  weeklyActivities.push({\n    name: activity.name,\n    type: type,\n    distance_km: distanceKm.toFixed(2),\n    time_hours: timeHours.toFixed(2),\n    elevation_gain: activity.total_elevation_gain || 0,\n    average_speed: activity.average_speed ? (activity.average_speed * 3.6).toFixed(1) : 'N/A',\n    max_speed: activity.max_speed ? (activity.max_speed * 3.6).toFixed(1) : 'N/A',\n    kudos_count: activity.kudos_count || 0,\n    start_date: date,\n    suffer_score: activity.suffer_score || 0\n  });\n});\n\n// Calculate goals progress\nconst distanceGoalProgress = (totalDistance / config.weekly_distance_goal * 100).toFixed(1);\nconst timeGoalProgress = ((totalTime / 3600) / config.weekly_time_goal_hours * 100).toFixed(1);\n\n// Calculate averages\nconst avgDistance = totalActivities > 0 ? (totalDistance / totalActivities).toFixed(2) : 0;\nconst avgTime = totalActivities > 0 ? ((totalTime / 3600) / totalActivities).toFixed(2) : 0;\nconst avgSpeed = totalTime > 0 ? ((totalDistance / (totalTime / 3600))).toFixed(1) : 0;\n\n// Find best performances\nconst longestRide = weeklyActivities.reduce((max, act) => \n  parseFloat(act.distance_km) > parseFloat(max.distance_km || 0) ? act : max, {});\nconst fastestActivity = weeklyActivities.reduce((max, act) => \n  parseFloat(act.average_speed) > parseFloat(max.average_speed || 0) ? act : max, {});\n\n// Format total time\nconst totalHours = Math.floor(totalTime / 3600);\nconst totalMinutes = Math.floor((totalTime % 3600) / 60);\n\n// Create comprehensive report\nconst weekStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toLocaleDateString();\nconst weekEnd = new Date().toLocaleDateString();\n\nconst report = `📊 **Weekly Training Report**\n` +\n  `📅 Period: ${weekStart} - ${weekEnd}\n\n` +\n  \n  `🎯 **Goal Progress:**\n` +\n  `• Distance: ${totalDistance.toFixed(1)}/${config.weekly_distance_goal} km (${distanceGoalProgress}%)\n` +\n  `• Time: ${totalHours}h ${totalMinutes}m/${config.weekly_time_goal_hours}h (${timeGoalProgress}%)\n\n` +\n  \n  `📈 **Weekly Summary:**\n` +\n  `• Total Activities: ${totalActivities}\n` +\n  `• Total Distance: ${totalDistance.toFixed(1)} km\n` +\n  `• Total Time: ${totalHours}h ${totalMinutes}m\n` +\n  `• Total Elevation: ${totalElevation.toFixed(0)} m\n` +\n  `• Average Speed: ${avgSpeed} km/h\n\n` +\n  \n  `🏃 **Activity Breakdown:**\n` +\n  Object.entries(activityTypes).map(([type, count]) => \n    `• ${type}: ${count} activities`).join('\n') + '\n\n' +\n  \n  `🏆 **Best Performances:**\n` +\n  `• Longest Activity: ${longestRide.name || 'N/A'} (${longestRide.distance_km || 0} km)\n` +\n  `• Fastest Activity: ${fastestActivity.name || 'N/A'} (${fastestActivity.average_speed || 0} km/h)\n\n` +\n  \n  `📊 **Daily Breakdown:**\n` +\n  Object.entries(dailyStats).map(([date, stats]) => \n    `• ${date}: ${stats.activities} activities, ${stats.distance.toFixed(1)} km, ${stats.time.toFixed(1)}h`\n  ).join('\n');\n\n// Prepare data for Google Sheets\nconst sheetsData = weeklyActivities.map(act => [\n  act.start_date,\n  act.name,\n  act.type,\n  act.distance_km,\n  act.time_hours,\n  act.elevation_gain,\n  act.average_speed,\n  act.max_speed,\n  act.kudos_count,\n  act.suffer_score\n]);\n\nreturn [{\n  json: {\n    report: report,\n    weekly_summary: {\n      total_activities: totalActivities,\n      total_distance: totalDistance.toFixed(1),\n      total_time_formatted: `${totalHours}h ${totalMinutes}m`,\n      total_elevation: totalElevation.toFixed(0),\n      average_speed: avgSpeed,\n      distance_goal_progress: distanceGoalProgress,\n      time_goal_progress: timeGoalProgress,\n      activity_types: activityTypes,\n      best_performances: {\n        longest: longestRide,\n        fastest: fastestActivity\n      }\n    },\n    activities: weeklyActivities,\n    sheets_data: sheetsData,\n    athlete_stats: athleteStats,\n    week_period: `${weekStart} - ${weekEnd}`\n  }\n}];"
+      },
+      "id": "process-weekly-data",
+      "name": "Process Weekly Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "{{ $('Set Configuration').item.json.google_sheets_id }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Weekly Training Log",
+          "mode": "list"
+        },
+        "columnToMatchOn": "Date",
+        "valueInputMode": "defineBelow",
+        "fieldsUi": {
+          "values": [
+            {
+              "fieldId": "Date",
+              "fieldValue": "{{ $json.week_period }}"
+            },
+            {
+              "fieldId": "Total Activities",
+              "fieldValue": "{{ $json.weekly_summary.total_activities }}"
+            },
+            {
+              "fieldId": "Total Distance (km)",
+              "fieldValue": "{{ $json.weekly_summary.total_distance }}"
+            },
+            {
+              "fieldId": "Total Time",
+              "fieldValue": "{{ $json.weekly_summary.total_time_formatted }}"
+            },
+            {
+              "fieldId": "Total Elevation (m)",
+              "fieldValue": "{{ $json.weekly_summary.total_elevation }}"
+            },
+            {
+              "fieldId": "Average Speed (km/h)",
+              "fieldValue": "{{ $json.weekly_summary.average_speed }}"
+            },
+            {
+              "fieldId": "Distance Goal Progress (%)",
+              "fieldValue": "{{ $json.weekly_summary.distance_goal_progress }}"
+            },
+            {
+              "fieldId": "Time Goal Progress (%)",
+              "fieldValue": "{{ $json.weekly_summary.time_goal_progress }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-sheets",
+      "name": "Update Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [1340, 200],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-oauth",
+          "name": "Google Sheets OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "{{ $('Set Configuration').item.json.telegram_chat_id }}",
+        "text": "{{ $json.report }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "send-telegram-report",
+      "name": "Send Telegram Report",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1340, 320],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "noreply@yourdomain.com",
+        "toEmail": "{{ $('Set Configuration').item.json.email_recipient }}",
+        "subject": "Weekly Training Report - {{ $json.week_period }}",
+        "emailFormat": "html",
+        "html": "<h2>📊 Weekly Training Report</h2>\n<h3>📅 Period: {{ $json.week_period }}</h3>\n\n<h3>🎯 Goal Progress:</h3>\n<div style='background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 10px 0;'>\n<p><strong>Distance:</strong> {{ $json.weekly_summary.total_distance }}/{{ $('Set Configuration').item.json.weekly_distance_goal }} km ({{ $json.weekly_summary.distance_goal_progress }}%)</p>\n<p><strong>Time:</strong> {{ $json.weekly_summary.total_time_formatted }}/{{ $('Set Configuration').item.json.weekly_time_goal_hours }}h ({{ $json.weekly_summary.time_goal_progress }}%)</p>\n</div>\n\n<h3>📈 Weekly Summary:</h3>\n<table style='border-collapse: collapse; width: 100%; border: 1px solid #ddd;'>\n<tr style='background: #f2f2f2;'>\n<td style='border: 1px solid #ddd; padding: 8px;'><strong>Metric</strong></td>\n<td style='border: 1px solid #ddd; padding: 8px;'><strong>Value</strong></td>\n</tr>\n<tr><td style='border: 1px solid #ddd; padding: 8px;'>Total Activities</td><td style='border: 1px solid #ddd; padding: 8px;'>{{ $json.weekly_summary.total_activities }}</td></tr>\n<tr><td style='border: 1px solid #ddd; padding: 8px;'>Total Distance</td><td style='border: 1px solid #ddd; padding: 8px;'>{{ $json.weekly_summary.total_distance }} km</td></tr>\n<tr><td style='border: 1px solid #ddd; padding: 8px;'>Total Time</td><td style='border: 1px solid #ddd; padding: 8px;'>{{ $json.weekly_summary.total_time_formatted }}</td></tr>\n<tr><td style='border: 1px solid #ddd; padding: 8px;'>Total Elevation</td><td style='border: 1px solid #ddd; padding: 8px;'>{{ $json.weekly_summary.total_elevation }} m</td></tr>\n<tr><td style='border: 1px solid #ddd; padding: 8px;'>Average Speed</td><td style='border: 1px solid #ddd; padding: 8px;'>{{ $json.weekly_summary.average_speed }} km/h</td></tr>\n</table>\n\n<h3>🏆 Best Performances:</h3>\n<p><strong>Longest Activity:</strong> {{ $json.weekly_summary.best_performances.longest.name || 'N/A' }} ({{ $json.weekly_summary.best_performances.longest.distance_km || 0 }} km)</p>\n<p><strong>Fastest Activity:</strong> {{ $json.weekly_summary.best_performances.fastest.name || 'N/A' }} ({{ $json.weekly_summary.best_performances.fastest.average_speed || 0 }} km/h)</p>\n\n<h3>🏃 Activity Details:</h3>\n<div style='font-family: Arial, sans-serif;'>\n{{ $json.activities.slice(0, 10).map(act => `\n<div style='border: 1px solid #ddd; padding: 10px; margin: 10px 0; border-radius: 5px;'>\n<h4>${act.name} (${act.type})</h4>\n<p><strong>Distance:</strong> ${act.distance_km} km | <strong>Time:</strong> ${act.time_hours}h | <strong>Elevation:</strong> ${act.elevation_gain}m</p>\n<p><strong>Avg Speed:</strong> ${act.average_speed} km/h | <strong>Kudos:</strong> ${act.kudos_count}</p>\n<p><small>Date: ${act.start_date}</small></p>\n</div>\n`).join('') }}\n</div>\n\n<p><small>Data automatically generated from Strava API</small></p>",
+        "options": {}
+      },
+      "id": "send-email-report",
+      "name": "Send Email Report",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1340, 440],
+      "credentials": {
+        "smtp": {
+          "id": "email-smtp",
+          "name": "Email SMTP"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every Monday at 9 AM": {
+      "main": [
+        [
+          {
+            "node": "Set Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Configuration": {
+      "main": [
+        [
+          {
+            "node": "Fetch Weekly Activities",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Athlete Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Weekly Activities": {
+      "main": [
+        [
+          {
+            "node": "Merge Activities and Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Athlete Stats": {
+      "main": [
+        [
+          {
+            "node": "Merge Activities and Stats",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Activities and Stats": {
+      "main": [
+        [
+          {
+            "node": "Process Weekly Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Weekly Data": {
+      "main": [
+        [
+          {
+            "node": "Update Google Sheets",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Telegram Report",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Email Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "strava-weekly-report",
+      "name": "Strava Weekly Report"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-15T10:00:00.000Z",
+  "versionId": "1"
+}

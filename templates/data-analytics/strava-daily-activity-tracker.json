@@ -1,0 +1,275 @@
+{
+  "name": "Strava Daily Activity Tracker",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 20 * * *"
+            }
+          ]
+        }
+      },
+      "id": "daily-trigger",
+      "name": "Daily at 8 PM",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "strava_access_token",
+              "value": "YOUR_STRAVA_ACCESS_TOKEN"
+            },
+            {
+              "name": "athlete_id",
+              "value": "YOUR_ATHLETE_ID"
+            },
+            {
+              "name": "telegram_bot_token",
+              "value": "YOUR_TELEGRAM_BOT_TOKEN"
+            },
+            {
+              "name": "telegram_chat_id",
+              "value": "YOUR_TELEGRAM_CHAT_ID"
+            },
+            {
+              "name": "email_recipient",
+              "value": "your-email@example.com"
+            }
+          ],
+          "number": [
+            {
+              "name": "days_back",
+              "value": 1
+            }
+          ]
+        }
+      },
+      "id": "config-node",
+      "name": "Set Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://www.strava.com/api/v3/athlete/activities",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "after",
+                "value": "{{ Math.floor((new Date().getTime() - ({{ $('Set Configuration').item.json.days_back }} * 24 * 60 * 60 * 1000)) / 1000) }}"
+              },
+              {
+                "name": "per_page",
+                "value": "30"
+              }
+            ]
+          },
+          "headers": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "Bearer {{ $('Set Configuration').item.json.strava_access_token }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "fetch-activities",
+      "name": "Fetch Recent Activities",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "{{ $json.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "check-activities",
+      "name": "Check If Activities Exist",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const activities = $input.all()[0].json;\nconst config = $('Set Configuration').item.json;\n\nif (!activities || activities.length === 0) {\n  return [{\n    json: {\n      summary: 'No activities found for today.',\n      total_activities: 0,\n      total_distance: 0,\n      total_time: 0,\n      activities: []\n    }\n  }];\n}\n\n// Calculate totals\nlet totalDistance = 0;\nlet totalTime = 0;\nlet totalElevation = 0;\nconst activityTypes = {};\n\nconst processedActivities = activities.map(activity => {\n  const distanceKm = (activity.distance / 1000).toFixed(2);\n  const timeHours = Math.floor(activity.moving_time / 3600);\n  const timeMinutes = Math.floor((activity.moving_time % 3600) / 60);\n  \n  totalDistance += parseFloat(distanceKm);\n  totalTime += activity.moving_time;\n  totalElevation += activity.total_elevation_gain || 0;\n  \n  // Count activity types\n  const type = activity.sport_type || activity.type;\n  activityTypes[type] = (activityTypes[type] || 0) + 1;\n  \n  return {\n    name: activity.name,\n    type: type,\n    distance_km: distanceKm,\n    time_formatted: `${timeHours}h ${timeMinutes}m`,\n    elevation_gain: activity.total_elevation_gain || 0,\n    average_speed: activity.average_speed ? (activity.average_speed * 3.6).toFixed(1) : 'N/A',\n    kudos_count: activity.kudos_count || 0,\n    start_date: new Date(activity.start_date).toLocaleString()\n  };\n});\n\n// Format total time\nconst totalHours = Math.floor(totalTime / 3600);\nconst totalMinutes = Math.floor((totalTime % 3600) / 60);\n\n// Create summary message\nconst activityTypesSummary = Object.entries(activityTypes)\n  .map(([type, count]) => `${count} ${type}${count > 1 ? 's' : ''}`)\n  .join(', ');\n\nconst summary = `🏃‍♂️ **Daily Strava Summary**\n\n` +\n  `📊 **Overview:**\n` +\n  `• Total Activities: ${activities.length}\n` +\n  `• Activity Types: ${activityTypesSummary}\n` +\n  `• Total Distance: ${totalDistance.toFixed(2)} km\n` +\n  `• Total Time: ${totalHours}h ${totalMinutes}m\n` +\n  `• Total Elevation: ${totalElevation.toFixed(0)} m\n\n` +\n  `🏃 **Activities:**\n` +\n  processedActivities.map(act => \n    `• **${act.name}** (${act.type})\n` +\n    `  📏 ${act.distance_km} km | ⏱️ ${act.time_formatted} | ⛰️ ${act.elevation_gain}m\n` +\n    `  🚀 Avg Speed: ${act.average_speed} km/h | 👍 ${act.kudos_count} kudos`\n  ).join('\n\n');\n\nreturn [{\n  json: {\n    summary: summary,\n    total_activities: activities.length,\n    total_distance: totalDistance.toFixed(2),\n    total_time_formatted: `${totalHours}h ${totalMinutes}m`,\n    total_elevation: totalElevation.toFixed(0),\n    activities: processedActivities,\n    activity_types: activityTypes\n  }\n}];"
+      },
+      "id": "process-activities",
+      "name": "Process Activities Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "chatId": "{{ $('Set Configuration').item.json.telegram_chat_id }}",
+        "text": "{{ $json.summary }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "send-telegram",
+      "name": "Send Telegram Summary",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1340, 120],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "noreply@yourdomain.com",
+        "toEmail": "{{ $('Set Configuration').item.json.email_recipient }}",
+        "subject": "Daily Strava Activity Summary - {{ new Date().toLocaleDateString() }}",
+        "emailFormat": "html",
+        "html": "<h2>🏃‍♂️ Daily Strava Summary</h2>\n<h3>📊 Overview:</h3>\n<ul>\n<li><strong>Total Activities:</strong> {{ $json.total_activities }}</li>\n<li><strong>Total Distance:</strong> {{ $json.total_distance }} km</li>\n<li><strong>Total Time:</strong> {{ $json.total_time_formatted }}</li>\n<li><strong>Total Elevation:</strong> {{ $json.total_elevation }} m</li>\n</ul>\n\n<h3>🏃 Activities:</h3>\n<div style='font-family: Arial, sans-serif;'>\n{{ $json.activities.map(act => `\n<div style='border: 1px solid #ddd; padding: 10px; margin: 10px 0; border-radius: 5px;'>\n<h4>${act.name} (${act.type})</h4>\n<p><strong>Distance:</strong> ${act.distance_km} km | <strong>Time:</strong> ${act.time_formatted} | <strong>Elevation:</strong> ${act.elevation_gain}m</p>\n<p><strong>Avg Speed:</strong> ${act.average_speed} km/h | <strong>Kudos:</strong> ${act.kudos_count}</p>\n<p><small>Started: ${act.start_date}</small></p>\n</div>\n`).join('') }}\n</div>",
+        "options": {}
+      },
+      "id": "send-email",
+      "name": "Send Email Summary",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1340, 280],
+      "credentials": {
+        "smtp": {
+          "id": "email-smtp",
+          "name": "Email SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "{{ $('Set Configuration').item.json.telegram_chat_id }}",
+        "text": "📭 No Strava activities found for today. Time to get moving! 🏃‍♂️"
+      },
+      "id": "no-activities-telegram",
+      "name": "Send No Activities Message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1120, 400],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot",
+          "name": "Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily at 8 PM": {
+      "main": [
+        [
+          {
+            "node": "Set Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Configuration": {
+      "main": [
+        [
+          {
+            "node": "Fetch Recent Activities",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Recent Activities": {
+      "main": [
+        [
+          {
+            "node": "Check If Activities Exist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check If Activities Exist": {
+      "main": [
+        [
+          {
+            "node": "Process Activities Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send No Activities Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Activities Data": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Summary",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Email Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-01-15T10:00:00.000Z",
+      "updatedAt": "2024-01-15T10:00:00.000Z",
+      "id": "strava-tracker",
+      "name": "Strava Tracker"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-15T10:00:00.000Z",
+  "versionId": "1"
+}
