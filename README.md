@@ -1,8 +1,6 @@
 # n8n Templates Collection
 
 <div align="center">
-  <img src="templates/imagen8n.png" alt="n8n Templates" width="200" height="200">
-  
   ![Templates](https://img.shields.io/badge/Templates-28+-blue)
   ![License](https://img.shields.io/badge/License-MIT-green)
   ![n8n](https://img.shields.io/badge/n8n-Compatible-orange)
