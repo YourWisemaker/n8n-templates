@@ -1,0 +1,477 @@
+{
+  "name": "System Health Monitor",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "1a2b3c4d-5e6f-7g8h-9i0j-k1l2m3n4o5p6",
+      "name": "Health Check Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "servers",
+              "name": "servers",
+              "value": "[\n  {\n    \"name\": \"Web Server\",\n    \"url\": \"https://your-website.com/health\",\n    \"type\": \"web\",\n    \"expectedStatus\": 200\n  },\n  {\n    \"name\": \"API Server\",\n    \"url\": \"https://api.your-website.com/status\",\n    \"type\": \"api\",\n    \"expectedStatus\": 200\n  },\n  {\n    \"name\": \"Database\",\n    \"url\": \"https://your-db-monitor.com/ping\",\n    \"type\": \"database\",\n    \"expectedStatus\": 200\n  }\n]",
+              "type": "array"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2b3c4d5e-6f7g-8h9i-0j1k-l2m3n4o5p6q7",
+      "name": "Set Server List",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "3c4d5e6f-7g8h-9i0j-1k2l-m3n4o5p6q7r8",
+      "name": "Split Into Batches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "options": {
+          "timeout": 10000,
+          "response": {
+            "response": {
+              "responseFormat": "json",
+              "outputPropertyName": "response"
+            }
+          },
+          "retry": {
+            "retry": {
+              "retries": 2,
+              "retryInterval": 1000
+            }
+          }
+        }
+      },
+      "id": "4d5e6f7g-8h9i-0j1k-2l3m-n4o5p6q7r8s9",
+      "name": "Health Check Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process health check results\nconst item = $input.first();\nconst server = item.json;\nconst timestamp = new Date().toISOString();\n\nlet status = 'healthy';\nlet responseTime = 0;\nlet errorMessage = '';\nlet statusCode = 0;\n\n// Check if request was successful\nif (item.error) {\n  status = 'error';\n  errorMessage = item.error.message || 'Unknown error';\n} else {\n  statusCode = item.json.response?.statusCode || 0;\n  responseTime = item.json.response?.responseTime || 0;\n  \n  // Check status code\n  if (statusCode !== server.expectedStatus) {\n    status = 'unhealthy';\n    errorMessage = `Expected status ${server.expectedStatus}, got ${statusCode}`;\n  }\n  \n  // Check response time (warn if > 5 seconds)\n  if (responseTime > 5000) {\n    status = status === 'healthy' ? 'slow' : status;\n    errorMessage = errorMessage || `Slow response time: ${responseTime}ms`;\n  }\n}\n\nconst result = {\n  json: {\n    serverName: server.name,\n    serverType: server.type,\n    url: server.url,\n    status: status,\n    statusCode: statusCode,\n    responseTime: responseTime,\n    errorMessage: errorMessage,\n    timestamp: timestamp,\n    isHealthy: status === 'healthy',\n    needsAlert: ['error', 'unhealthy'].includes(status)\n  }\n};\n\nreturn [result];"
+      },
+      "id": "5e6f7g8h-9i0j-1k2l-3m4n-o5p6q7r8s9t0",
+      "name": "Process Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "your-monitoring-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Health Logs"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $json.timestamp }}",
+            "serverName": "={{ $json.serverName }}",
+            "serverType": "={{ $json.serverType }}",
+            "status": "={{ $json.status }}",
+            "statusCode": "={{ $json.statusCode }}",
+            "responseTime": "={{ $json.responseTime }}",
+            "errorMessage": "={{ $json.errorMessage }}",
+            "url": "={{ $json.url }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "serverName",
+              "displayName": "serverName",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "serverType",
+              "displayName": "serverType",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "statusCode",
+              "displayName": "statusCode",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "responseTime",
+              "displayName": "responseTime",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "errorMessage",
+              "displayName": "errorMessage",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "url",
+              "displayName": "url",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6f7g8h9i-0j1k-2l3m-4n5o-p6q7r8s9t0u1",
+      "name": "Log to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1340, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.needsAlert }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combineOperation": "any"
+        },
+        "options": {}
+      },
+      "id": "7g8h9i0j-1k2l-3m4n-5o6p-q7r8s9t0u1v2",
+      "name": "Check If Alert Needed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "your-telegram-chat-id",
+        "text": "🚨 *System Alert*\n\n**Server:** {{ $json.serverName }}\n**Status:** {{ $json.status.toUpperCase() }}\n**Error:** {{ $json.errorMessage }}\n**Time:** {{ $json.timestamp }}\n**URL:** {{ $json.url }}\n\n{{ $json.status === 'error' ? '❌ Server is DOWN' : '⚠️ Server has issues' }}\n\n[📊 View Dashboard](https://docs.google.com/spreadsheets/d/your-monitoring-sheet-id)",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "8h9i0j1k-2l3m-4n5o-6p7q-r8s9t0u1v2w3",
+      "name": "Send Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1780, 200],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot-credential",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "channel",
+        "operation": "sendMessage",
+        "channelId": "your-slack-channel-id",
+        "text": ":warning: System Health Alert",
+        "otherOptions": {
+          "blocks": [
+            {
+              "type": "section",
+              "text": {
+                "type": "mrkdwn",
+                "text": "*System Health Alert*\n\n:red_circle: *{{ $json.serverName }}* is experiencing issues\n\n*Status:* {{ $json.status }}\n*Error:* {{ $json.errorMessage }}\n*Response Time:* {{ $json.responseTime }}ms\n*Timestamp:* {{ $json.timestamp }}"
+              }
+            },
+            {
+              "type": "actions",
+              "elements": [
+                {
+                  "type": "button",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "View Dashboard"
+                  },
+                  "url": "https://docs.google.com/spreadsheets/d/your-monitoring-sheet-id"
+                },
+                {
+                  "type": "button",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "Check Server"
+                  },
+                  "url": "{{ $json.url }}"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "id": "9i0j1k2l-3m4n-5o6p-7q8r-s9t0u1v2w3x4",
+      "name": "Send Slack Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.1,
+      "position": [1780, 400],
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "slack-oauth-credential",
+          "name": "Slack OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $('Split Into Batches').item.json.context.noItemsLeft }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combineOperation": "any"
+        },
+        "options": {}
+      },
+      "id": "0j1k2l3m-4n5o-6p7q-8r9s-t0u1v2w3x4y5",
+      "name": "Check If Last Item",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1340, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate daily summary report\nconst allItems = $input.all();\nconst timestamp = new Date().toISOString();\nconst date = new Date().toISOString().split('T')[0];\n\nconst summary = {\n  totalServers: 0,\n  healthyServers: 0,\n  unhealthyServers: 0,\n  errorServers: 0,\n  slowServers: 0,\n  averageResponseTime: 0,\n  servers: []\n};\n\nlet totalResponseTime = 0;\nlet responseTimeCount = 0;\n\nfor (const item of allItems) {\n  const server = item.json;\n  summary.totalServers++;\n  \n  switch (server.status) {\n    case 'healthy': summary.healthyServers++; break;\n    case 'unhealthy': summary.unhealthyServers++; break;\n    case 'error': summary.errorServers++; break;\n    case 'slow': summary.slowServers++; break;\n  }\n  \n  if (server.responseTime > 0) {\n    totalResponseTime += server.responseTime;\n    responseTimeCount++;\n  }\n  \n  summary.servers.push({\n    name: server.serverName,\n    status: server.status,\n    responseTime: server.responseTime\n  });\n}\n\nif (responseTimeCount > 0) {\n  summary.averageResponseTime = Math.round(totalResponseTime / responseTimeCount);\n}\n\nconst healthPercentage = summary.totalServers > 0 ? \n  Math.round((summary.healthyServers / summary.totalServers) * 100) : 0;\n\nconst result = {\n  json: {\n    date: date,\n    timestamp: timestamp,\n    summary: summary,\n    healthPercentage: healthPercentage,\n    overallStatus: healthPercentage >= 90 ? 'Good' : healthPercentage >= 70 ? 'Warning' : 'Critical'\n  }\n};\n\nreturn [result];"
+      },
+      "id": "1k2l3m4n-5o6p-7q8r-9s0t-u1v2w3x4y5z6",
+      "name": "Generate Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 500]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "your-telegram-chat-id",
+        "text": "📊 *System Health Summary*\n\n**Overall Status:** {{ $json.overallStatus }} ({{ $json.healthPercentage }}%)\n**Total Servers:** {{ $json.summary.totalServers }}\n✅ **Healthy:** {{ $json.summary.healthyServers }}\n⚠️ **Issues:** {{ $json.summary.unhealthyServers + $json.summary.slowServers }}\n❌ **Down:** {{ $json.summary.errorServers }}\n⏱️ **Avg Response:** {{ $json.summary.averageResponseTime }}ms\n\n**Time:** {{ $json.timestamp }}\n\n[📊 View Dashboard](https://docs.google.com/spreadsheets/d/your-monitoring-sheet-id)",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "2l3m4n5o-6p7q-8r9s-0t1u-v2w3x4y5z6a7",
+      "name": "Send Summary",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1780, 500],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot-credential",
+          "name": "Telegram Bot API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Health Check Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set Server List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Server List": {
+      "main": [
+        [
+          {
+            "node": "Split Into Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Into Batches": {
+      "main": [
+        [
+          {
+            "node": "Health Check Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Health Check Request": {
+      "main": [
+        [
+          {
+            "node": "Process Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Results": {
+      "main": [
+        [
+          {
+            "node": "Log to Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Check If Alert Needed",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check If Last Item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check If Alert Needed": {
+      "main": [
+        [
+          {
+            "node": "Send Alert",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Slack Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check If Last Item": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Summary": {
+      "main": [
+        [
+          {
+            "node": "Send Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-12-19T10:00:00.000Z",
+      "updatedAt": "2024-12-19T10:00:00.000Z",
+      "id": "security-monitoring",
+      "name": "Security & Monitoring"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-12-19T10:00:00.000Z",
+  "versionId": "1"
+}

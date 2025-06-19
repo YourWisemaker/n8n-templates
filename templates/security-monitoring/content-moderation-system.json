@@ -1,0 +1,678 @@
+{
+  "name": "Content Moderation System",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "content-moderation",
+        "options": {}
+      },
+      "id": "1a2b3c4d-5e6f-7g8h-9i0j-k1l2m3n4o5p6",
+      "name": "Content Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "content-moderation-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse and validate incoming content\nconst payload = $json.body;\n\n// Extract content data\nconst contentData = {\n  id: payload.id || `content_${Date.now()}`,\n  type: payload.type || 'text', // text, image, video, audio\n  content: payload.content || '',\n  url: payload.url || null,\n  userId: payload.userId || 'anonymous',\n  username: payload.username || 'Unknown User',\n  platform: payload.platform || 'unknown', // discord, telegram, website, etc.\n  channelId: payload.channelId || null,\n  channelName: payload.channelName || 'Unknown Channel',\n  timestamp: payload.timestamp || new Date().toISOString(),\n  metadata: payload.metadata || {}\n};\n\n// Validate required fields\nconst isValid = contentData.content || contentData.url;\n\n// Determine moderation strategy based on content type\nconst moderationStrategy = {\n  needsTextAnalysis: contentData.type === 'text' && contentData.content,\n  needsImageAnalysis: contentData.type === 'image' && contentData.url,\n  needsVideoAnalysis: contentData.type === 'video' && contentData.url,\n  needsAudioAnalysis: contentData.type === 'audio' && contentData.url\n};\n\nreturn {\n  json: {\n    ...contentData,\n    isValid,\n    moderationStrategy,\n    processedAt: new Date().toISOString(),\n    moderationId: `mod_${contentData.id}_${Date.now()}`\n  }\n};"
+      },
+      "id": "2b3c4d5e-6f7g-8h9i-0j1k-l2m3n4o5p6q7",
+      "name": "Parse Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.isValid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combineOperation": "all"
+        },
+        "options": {}
+      },
+      "id": "3c4d5e6f-7g8h-9i0j-1k2l-m3n4o5p6q7r8",
+      "name": "Is Valid Content?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.moderationStrategy.needsTextAnalysis }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combineOperation": "all"
+        },
+        "options": {}
+      },
+      "id": "4d5e6f7g-8h9i-0j1k-2l3m-n4o5p6q7r8s9",
+      "name": "Needs Text Analysis?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "resource": "moderation",
+        "text": "={{ $json.content }}",
+        "options": {}
+      },
+      "id": "5e6f7g8h-9i0j-1k2l-3m4n-o5p6q7r8s9t0",
+      "name": "OpenAI Moderation",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [1120, 200],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "operation": "create",
+        "model": {
+          "__rl": true,
+          "value": "gpt-4",
+          "mode": "list"
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a content moderation AI. Analyze the provided text for:\n1. Toxicity (harassment, hate speech, threats)\n2. Spam (repetitive, promotional, irrelevant content)\n3. Inappropriate content (NSFW, violence, illegal activities)\n4. Misinformation (false claims, conspiracy theories)\n5. Personal information (PII, doxxing attempts)\n\nRespond with JSON: {\"flagged\": boolean, \"categories\": [\"category1\", \"category2\"], \"severity\": \"low|medium|high\", \"confidence\": 0.0-1.0, \"reason\": \"explanation\", \"action\": \"approve|review|block\"}"
+            },
+            {
+              "role": "user",
+              "content": "Analyze this content:\n\nUser: {{ $json.username }}\nPlatform: {{ $json.platform }}\nChannel: {{ $json.channelName }}\nContent: {{ $json.content }}"
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.1,
+          "maxTokens": 500
+        }
+      },
+      "id": "6f7g8h9i-0j1k-2l3m-4n5o-p6q7r8s9t0u1",
+      "name": "Advanced Text Analysis",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [1340, 200],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.moderationStrategy.needsImageAnalysis }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combineOperation": "all"
+        },
+        "options": {}
+      },
+      "id": "7g8h9i0j-1k2l-3m4n-5o6p-q7r8s9t0u1v2",
+      "name": "Needs Image Analysis?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "operation": "create",
+        "model": {
+          "__rl": true,
+          "value": "gpt-4-vision-preview",
+          "mode": "list"
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are an image moderation AI. Analyze the provided image for:\n1. NSFW content (nudity, sexual content)\n2. Violence (graphic violence, weapons, gore)\n3. Hate symbols (Nazi symbols, extremist imagery)\n4. Illegal content (drugs, illegal activities)\n5. Spam (promotional content, irrelevant images)\n\nRespond with JSON: {\"flagged\": boolean, \"categories\": [\"category1\", \"category2\"], \"severity\": \"low|medium|high\", \"confidence\": 0.0-1.0, \"reason\": \"explanation\", \"action\": \"approve|review|block\"}"
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Analyze this image for content moderation:"
+                },
+                {
+                  "type": "image_url",
+                  "image_url": {
+                    "url": "={{ $json.url }}"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.1,
+          "maxTokens": 500
+        }
+      },
+      "id": "8h9i0j1k-2l3m-4n5o-6p7q-r8s9t0u1v2w3",
+      "name": "Image Analysis",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [1120, 400],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Combine and process moderation results\nconst contentData = $('Parse Content').item.json;\nconst openaiModeration = $('OpenAI Moderation').item?.json;\nconst advancedTextAnalysis = $('Advanced Text Analysis').item?.json;\nconst imageAnalysis = $('Image Analysis').item?.json;\n\n// Initialize moderation result\nlet moderationResult = {\n  contentId: contentData.id,\n  moderationId: contentData.moderationId,\n  flagged: false,\n  categories: [],\n  severity: 'low',\n  confidence: 0,\n  reason: '',\n  action: 'approve',\n  sources: []\n};\n\n// Process OpenAI moderation results\nif (openaiModeration && openaiModeration.results && openaiModeration.results.length > 0) {\n  const result = openaiModeration.results[0];\n  if (result.flagged) {\n    moderationResult.flagged = true;\n    moderationResult.sources.push('OpenAI Moderation');\n    \n    // Extract flagged categories\n    Object.keys(result.categories).forEach(category => {\n      if (result.categories[category]) {\n        moderationResult.categories.push(category);\n      }\n    });\n    \n    // Determine severity based on category scores\n    const maxScore = Math.max(...Object.values(result.category_scores));\n    if (maxScore > 0.8) {\n      moderationResult.severity = 'high';\n    } else if (maxScore > 0.5) {\n      moderationResult.severity = 'medium';\n    }\n    \n    moderationResult.confidence = maxScore;\n  }\n}\n\n// Process advanced text analysis\nif (advancedTextAnalysis && advancedTextAnalysis.choices && advancedTextAnalysis.choices.length > 0) {\n  try {\n    const analysisContent = advancedTextAnalysis.choices[0].message.content;\n    const analysis = JSON.parse(analysisContent);\n    \n    if (analysis.flagged) {\n      moderationResult.flagged = true;\n      moderationResult.sources.push('Advanced Text Analysis');\n      moderationResult.categories = [...new Set([...moderationResult.categories, ...analysis.categories])];\n      \n      // Use higher severity\n      const severityLevels = { low: 1, medium: 2, high: 3 };\n      if (severityLevels[analysis.severity] > severityLevels[moderationResult.severity]) {\n        moderationResult.severity = analysis.severity;\n      }\n      \n      // Use higher confidence\n      if (analysis.confidence > moderationResult.confidence) {\n        moderationResult.confidence = analysis.confidence;\n      }\n      \n      moderationResult.reason += (moderationResult.reason ? ' | ' : '') + analysis.reason;\n      \n      // Use most restrictive action\n      const actionLevels = { approve: 1, review: 2, block: 3 };\n      if (actionLevels[analysis.action] > actionLevels[moderationResult.action]) {\n        moderationResult.action = analysis.action;\n      }\n    }\n  } catch (error) {\n    console.log('Error parsing advanced text analysis:', error);\n  }\n}\n\n// Process image analysis\nif (imageAnalysis && imageAnalysis.choices && imageAnalysis.choices.length > 0) {\n  try {\n    const analysisContent = imageAnalysis.choices[0].message.content;\n    const analysis = JSON.parse(analysisContent);\n    \n    if (analysis.flagged) {\n      moderationResult.flagged = true;\n      moderationResult.sources.push('Image Analysis');\n      moderationResult.categories = [...new Set([...moderationResult.categories, ...analysis.categories])];\n      \n      // Use higher severity\n      const severityLevels = { low: 1, medium: 2, high: 3 };\n      if (severityLevels[analysis.severity] > severityLevels[moderationResult.severity]) {\n        moderationResult.severity = analysis.severity;\n      }\n      \n      // Use higher confidence\n      if (analysis.confidence > moderationResult.confidence) {\n        moderationResult.confidence = analysis.confidence;\n      }\n      \n      moderationResult.reason += (moderationResult.reason ? ' | ' : '') + analysis.reason;\n      \n      // Use most restrictive action\n      const actionLevels = { approve: 1, review: 2, block: 3 };\n      if (actionLevels[analysis.action] > actionLevels[moderationResult.action]) {\n        moderationResult.action = analysis.action;\n      }\n    }\n  } catch (error) {\n    console.log('Error parsing image analysis:', error);\n  }\n}\n\n// Final decision logic\nif (!moderationResult.flagged) {\n  moderationResult.action = 'approve';\n  moderationResult.reason = 'Content passed all moderation checks';\n}\n\nreturn {\n  json: {\n    ...contentData,\n    moderation: moderationResult,\n    needsAction: moderationResult.action !== 'approve',\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "9i0j1k2l-3m4n-5o6p-7q8r-s9t0u1v2w3x4",
+      "name": "Process Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "your-moderation-logs-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Moderation Logs"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $json.timestamp }}",
+            "contentId": "={{ $json.id }}",
+            "moderationId": "={{ $json.moderation.moderationId }}",
+            "userId": "={{ $json.userId }}",
+            "username": "={{ $json.username }}",
+            "platform": "={{ $json.platform }}",
+            "channelName": "={{ $json.channelName }}",
+            "contentType": "={{ $json.type }}",
+            "content": "={{ $json.content || 'Media content' }}",
+            "flagged": "={{ $json.moderation.flagged }}",
+            "categories": "={{ $json.moderation.categories.join(', ') }}",
+            "severity": "={{ $json.moderation.severity }}",
+            "confidence": "={{ $json.moderation.confidence }}",
+            "action": "={{ $json.moderation.action }}",
+            "reason": "={{ $json.moderation.reason }}",
+            "sources": "={{ $json.moderation.sources.join(', ') }}",
+            "needsAction": "={{ $json.needsAction }}"
+          },
+          "matchingColumns": [
+            "moderationId"
+          ],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "contentId",
+              "displayName": "contentId",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "moderationId",
+              "displayName": "moderationId",
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "userId",
+              "displayName": "userId",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "username",
+              "displayName": "username",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "platform",
+              "displayName": "platform",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "channelName",
+              "displayName": "channelName",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "contentType",
+              "displayName": "contentType",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "content",
+              "displayName": "content",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "flagged",
+              "displayName": "flagged",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "categories",
+              "displayName": "categories",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "severity",
+              "displayName": "severity",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "confidence",
+              "displayName": "confidence",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "action",
+              "displayName": "action",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reason",
+              "displayName": "reason",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "sources",
+              "displayName": "sources",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "needsAction",
+              "displayName": "needsAction",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "0j1k2l3m-4n5o-6p7q-8r9s-t0u1v2w3x4y5",
+      "name": "Log Moderation",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1780, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.moderation.action }}",
+              "rightValue": "block",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combineOperation": "any"
+        },
+        "options": {}
+      },
+      "id": "1k2l3m4n-5o6p-7q8r-9s0t-u1v2w3x4y5z6",
+      "name": "Should Block?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2000, 200]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "your-moderation-team-chat-id",
+        "text": "🚨 **CONTENT BLOCKED**\n\n**Platform:** {{ $json.platform }}\n**Channel:** {{ $json.channelName }}\n**User:** {{ $json.username }} ({{ $json.userId }})\n**Type:** {{ $json.type }}\n**Severity:** {{ $json.moderation.severity.toUpperCase() }}\n**Categories:** {{ $json.moderation.categories.join(', ') }}\n**Confidence:** {{ ($json.moderation.confidence * 100).toFixed(1) }}%\n\n**Reason:** {{ $json.moderation.reason }}\n\n**Content Preview:**\n{{ $json.content ? $json.content.substring(0, 200) + ($json.content.length > 200 ? '...' : '') : 'Media content - check logs for details' }}\n\n[📊 View Moderation Dashboard](https://docs.google.com/spreadsheets/d/your-moderation-logs-sheet-id)",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "2l3m4n5o-6p7q-8r9s-0t1u-v2w3x4y5z6a7",
+      "name": "Alert Blocked Content",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [2220, 200],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot-credential",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.moderation.action }}",
+              "rightValue": "review",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combineOperation": "any"
+        },
+        "options": {}
+      },
+      "id": "3m4n5o6p-7q8r-9s0t-1u2v-w3x4y5z6a7b8",
+      "name": "Needs Review?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2000, 400]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "your-moderation-team-chat-id",
+        "text": "⚠️ **CONTENT NEEDS REVIEW**\n\n**Platform:** {{ $json.platform }}\n**Channel:** {{ $json.channelName }}\n**User:** {{ $json.username }} ({{ $json.userId }})\n**Type:** {{ $json.type }}\n**Severity:** {{ $json.moderation.severity.toUpperCase() }}\n**Categories:** {{ $json.moderation.categories.join(', ') }}\n**Confidence:** {{ ($json.moderation.confidence * 100).toFixed(1) }}%\n\n**Reason:** {{ $json.moderation.reason }}\n\n**Content Preview:**\n{{ $json.content ? $json.content.substring(0, 300) + ($json.content.length > 300 ? '...' : '') : 'Media content - check logs for details' }}\n\n[📊 Review in Dashboard](https://docs.google.com/spreadsheets/d/your-moderation-logs-sheet-id)",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "4n5o6p7q-8r9s-0t1u-2v3w-x4y5z6a7b8c9",
+      "name": "Request Review",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [2220, 400],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot-credential",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"status\": \"{{ $json.moderation.action }}\",\n  \"moderationId\": \"{{ $json.moderation.moderationId }}\",\n  \"flagged\": {{ $json.moderation.flagged }},\n  \"severity\": \"{{ $json.moderation.severity }}\",\n  \"confidence\": {{ $json.moderation.confidence }},\n  \"categories\": {{ JSON.stringify($json.moderation.categories) }},\n  \"reason\": \"{{ $json.moderation.reason }}\",\n  \"timestamp\": \"{{ $json.timestamp }}\"\n}",
+        "options": {}
+      },
+      "id": "5o6p7q8r-9s0t-1u2v-3w4x-y5z6a7b8c9d0",
+      "name": "Return Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2000, 600]
+    }
+  ],
+  "connections": {
+    "Content Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Content": {
+      "main": [
+        [
+          {
+            "node": "Is Valid Content?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Valid Content?": {
+      "main": [
+        [
+          {
+            "node": "Needs Text Analysis?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Needs Image Analysis?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Text Analysis?": {
+      "main": [
+        [
+          {
+            "node": "OpenAI Moderation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Moderation": {
+      "main": [
+        [
+          {
+            "node": "Advanced Text Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Advanced Text Analysis": {
+      "main": [
+        [
+          {
+            "node": "Process Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Image Analysis?": {
+      "main": [
+        [
+          {
+            "node": "Image Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Image Analysis": {
+      "main": [
+        [
+          {
+            "node": "Process Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Results": {
+      "main": [
+        [
+          {
+            "node": "Log Moderation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Moderation": {
+      "main": [
+        [
+          {
+            "node": "Should Block?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Needs Review?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Return Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Block?": {
+      "main": [
+        [
+          {
+            "node": "Alert Blocked Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Review?": {
+      "main": [
+        [
+          {
+            "node": "Request Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-12-19T10:00:00.000Z",
+      "updatedAt": "2024-12-19T10:00:00.000Z",
+      "id": "security-monitoring",
+      "name": "Security & Monitoring"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-12-19T10:00:00.000Z",
+  "versionId": "1"
+}

@@ -1,0 +1,331 @@
+{
+  "name": "Social Media Manager",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8,12,17 * * *"
+            }
+          ]
+        }
+      },
+      "id": "posting-schedule",
+      "name": "Daily Posting Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Social media content scheduler\nconst platforms = ['twitter', 'linkedin', 'facebook', 'instagram'];\nconst contentTypes = ['educational', 'promotional', 'engagement', 'news'];\nconst currentHour = new Date().getHours();\n\n// Determine optimal content type based on time\nlet contentType;\nif (currentHour === 8) contentType = 'educational';\nelse if (currentHour === 12) contentType = 'engagement';\nelse if (currentHour === 17) contentType = 'promotional';\n\n// Content templates\nconst contentTemplates = {\n  educational: [\n    'Did you know? Automation can save up to 40% of your daily tasks! 🤖 #Productivity #Automation',\n    'Pro tip: Start small with automation - automate one repetitive task at a time 💡 #WorkSmart',\n    'The future of work is automated workflows. Are you ready? 🚀 #FutureOfWork #NoCode'\n  ],\n  promotional: [\n    'Transform your business with powerful automation workflows! Check out our latest templates 🔥 #Business #Automation',\n    'New workflow templates available! Streamline your processes today 📈 #Productivity #Templates',\n    'Boost your efficiency with our automation solutions! Link in bio 💪 #Efficiency #Growth'\n  ],\n  engagement: [\n    'What\\'s your biggest time-waster at work? Let\\'s discuss automation solutions! 💬 #Discussion',\n    'Poll: Which task would you automate first? A) Email management B) Data entry C) Social media D) Reporting 📊',\n    'Share your automation success story! We love hearing how workflows change lives 🌟 #Community'\n  ],\n  news: [\n    'Industry update: Latest trends in business automation 📰 #Industry #News',\n    'Breaking: New integration possibilities for your workflows! 🔗 #Updates #Integration',\n    'Weekly roundup: Top automation tips from our community 📝 #WeeklyRoundup'\n  ]\n};\n\n// Select random content\nconst selectedContent = contentTemplates[contentType][Math.floor(Math.random() * contentTemplates[contentType].length)];\n\n// Platform-specific adaptations\nconst platformContent = {\n  twitter: {\n    text: selectedContent,\n    maxLength: 280,\n    hashtags: 3,\n    mediaType: 'image'\n  },\n  linkedin: {\n    text: selectedContent + '\\n\\nWhat are your thoughts on this? Share your experience in the comments!',\n    maxLength: 3000,\n    hashtags: 5,\n    mediaType: 'article'\n  },\n  facebook: {\n    text: selectedContent + '\\n\\nTag a friend who needs to see this! 👥',\n    maxLength: 63206,\n    hashtags: 2,\n    mediaType: 'image'\n  },\n  instagram: {\n    text: selectedContent + '\\n\\n.\\n.\\n.\\n#automation #productivity #business #workflow #nocode #efficiency #growth #success',\n    maxLength: 2200,\n    hashtags: 10,\n    mediaType: 'image'\n  }\n};\n\nreturn {\n  json: {\n    contentType,\n    timestamp: new Date().toISOString(),\n    platforms: platformContent,\n    scheduledFor: currentHour,\n    campaignId: `campaign_${Date.now()}`,\n    status: 'ready'\n  }\n};"
+      },
+      "id": "content-generator",
+      "name": "Content Generator",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "prompt": "Enhance this social media post for maximum engagement:\n\n{{ $json.platforms.twitter.text }}\n\nMake it more engaging, add relevant emojis, and ensure it's optimized for {{ $json.contentType }} content. Keep it under 280 characters for Twitter.",
+        "options": {
+          "temperature": 0.8,
+          "maxTokens": 200
+        }
+      },
+      "id": "ai-enhancer",
+      "name": "AI Content Enhancer",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process enhanced content\nconst enhancedContent = $json.choices[0].message.content;\nconst originalData = $('Content Generator').item(0).json;\n\n// Update all platform content with enhanced version\nconst updatedPlatforms = { ...originalData.platforms };\n\n// Adapt enhanced content for each platform\nupdatedPlatforms.twitter.text = enhancedContent;\nupdatedPlatforms.linkedin.text = enhancedContent + '\\n\\nWhat strategies have worked best for your team? I\\'d love to hear your insights in the comments below! 💭';\nupdatedPlatforms.facebook.text = enhancedContent + '\\n\\nDouble-tap if you agree! 👍 Share this with someone who could benefit from automation.';\nupdatedPlatforms.instagram.text = enhancedContent + '\\n\\n.\\n.\\n.\\n#automation #productivity #business #workflow #nocode #efficiency #growth #success #entrepreneur #digitaltransformation';\n\n// Add engagement metrics prediction\nconst engagementPrediction = {\n  twitter: {\n    expectedLikes: Math.floor(Math.random() * 50) + 10,\n    expectedRetweets: Math.floor(Math.random() * 20) + 5,\n    expectedReplies: Math.floor(Math.random() * 15) + 3\n  },\n  linkedin: {\n    expectedLikes: Math.floor(Math.random() * 100) + 20,\n    expectedComments: Math.floor(Math.random() * 25) + 5,\n    expectedShares: Math.floor(Math.random() * 10) + 2\n  },\n  facebook: {\n    expectedLikes: Math.floor(Math.random() * 75) + 15,\n    expectedComments: Math.floor(Math.random() * 20) + 3,\n    expectedShares: Math.floor(Math.random() * 8) + 1\n  },\n  instagram: {\n    expectedLikes: Math.floor(Math.random() * 200) + 50,\n    expectedComments: Math.floor(Math.random() * 30) + 8,\n    expectedSaves: Math.floor(Math.random() * 15) + 3\n  }\n};\n\nreturn {\n  json: {\n    ...originalData,\n    platforms: updatedPlatforms,\n    enhanced: true,\n    engagementPrediction,\n    readyToPost: true\n  }\n};"
+      },
+      "id": "content-processor",
+      "name": "Content Processor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "text": "{{ $json.platforms.twitter.text }}",
+        "additionalFields": {}
+      },
+      "id": "post-twitter",
+      "name": "Post to Twitter",
+      "type": "n8n-nodes-base.twitter",
+      "typeVersion": 2,
+      "position": [1120, 180]
+    },
+    {
+      "parameters": {
+        "text": "{{ $json.platforms.linkedin.text }}",
+        "additionalFields": {
+          "visibility": "public"
+        }
+      },
+      "id": "post-linkedin",
+      "name": "Post to LinkedIn",
+      "type": "n8n-nodes-base.linkedIn",
+      "typeVersion": 1,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "message": "{{ $json.platforms.facebook.text }}",
+        "additionalFields": {}
+      },
+      "id": "post-facebook",
+      "name": "Post to Facebook",
+      "type": "n8n-nodes-base.facebookGraphApi",
+      "typeVersion": 1,
+      "position": [1120, 420]
+    },
+    {
+      "parameters": {
+        "resource": "spreadsheet",
+        "operation": "appendOrUpdate",
+        "documentId": "{{ $env.GOOGLE_SHEETS_SOCIAL_ID }}",
+        "sheetName": "Social Media Posts",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ $json.timestamp }}",
+            "Campaign ID": "={{ $json.campaignId }}",
+            "Content Type": "={{ $json.contentType }}",
+            "Twitter": "={{ $json.platforms.twitter.text }}",
+            "LinkedIn": "={{ $json.platforms.linkedin.text }}",
+            "Facebook": "={{ $json.platforms.facebook.text }}",
+            "Instagram": "={{ $json.platforms.instagram.text }}",
+            "Status": "Posted",
+            "Expected Engagement": "={{ Object.values($json.engagementPrediction).map(p => Object.values(p).reduce((a,b) => a+b, 0)).reduce((a,b) => a+b, 0) }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "log-posts",
+      "name": "Log Social Media Posts",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "social-engagement",
+        "options": {}
+      },
+      "id": "engagement-webhook",
+      "name": "Engagement Tracking Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 600],
+      "webhookId": "social-engagement-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process engagement data\nconst engagementData = $json.body;\n\n// Calculate engagement metrics\nconst metrics = {\n  platform: engagementData.platform || 'unknown',\n  postId: engagementData.postId || '',\n  campaignId: engagementData.campaignId || '',\n  timestamp: new Date().toISOString(),\n  likes: parseInt(engagementData.likes) || 0,\n  comments: parseInt(engagementData.comments) || 0,\n  shares: parseInt(engagementData.shares) || 0,\n  clicks: parseInt(engagementData.clicks) || 0,\n  impressions: parseInt(engagementData.impressions) || 0,\n  reach: parseInt(engagementData.reach) || 0\n};\n\n// Calculate engagement rate\nmetrics.engagementRate = metrics.impressions > 0 ? \n  ((metrics.likes + metrics.comments + metrics.shares) / metrics.impressions * 100).toFixed(2) : 0;\n\n// Performance classification\nif (metrics.engagementRate > 5) {\n  metrics.performance = 'excellent';\n} else if (metrics.engagementRate > 3) {\n  metrics.performance = 'good';\n} else if (metrics.engagementRate > 1) {\n  metrics.performance = 'average';\n} else {\n  metrics.performance = 'poor';\n}\n\n// Generate insights\nmetrics.insights = [];\nif (metrics.comments > metrics.likes * 0.1) {\n  metrics.insights.push('High comment engagement - content sparked discussion');\n}\nif (metrics.shares > metrics.likes * 0.05) {\n  metrics.insights.push('High share rate - content is highly valuable');\n}\nif (metrics.clicks > metrics.impressions * 0.02) {\n  metrics.insights.push('Strong click-through rate - compelling call-to-action');\n}\n\nreturn { json: metrics };"
+      },
+      "id": "engagement-processor",
+      "name": "Engagement Processor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 600]
+    },
+    {
+      "parameters": {
+        "resource": "spreadsheet",
+        "operation": "appendOrUpdate",
+        "documentId": "{{ $env.GOOGLE_SHEETS_SOCIAL_ID }}",
+        "sheetName": "Engagement Analytics",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ $json.timestamp }}",
+            "Platform": "={{ $json.platform }}",
+            "Post ID": "={{ $json.postId }}",
+            "Campaign ID": "={{ $json.campaignId }}",
+            "Likes": "={{ $json.likes }}",
+            "Comments": "={{ $json.comments }}",
+            "Shares": "={{ $json.shares }}",
+            "Clicks": "={{ $json.clicks }}",
+            "Impressions": "={{ $json.impressions }}",
+            "Reach": "={{ $json.reach }}",
+            "Engagement Rate": "={{ $json.engagementRate }}%",
+            "Performance": "={{ $json.performance }}",
+            "Insights": "={{ $json.insights.join('; ') }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "save-engagement",
+      "name": "Save Engagement Data",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [680, 600]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.performance }}",
+              "rightValue": "excellent",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-performance",
+      "name": "Check High Performance",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 600]
+    },
+    {
+      "parameters": {
+        "chatId": "{{ $env.TELEGRAM_SOCIAL_CHAT_ID }}",
+        "text": "🚀 *Excellent Social Media Performance!*\n\n📱 *Platform:* {{ $json.platform }}\n📊 *Engagement Rate:* {{ $json.engagementRate }}%\n👍 *Likes:* {{ $json.likes }}\n💬 *Comments:* {{ $json.comments }}\n🔄 *Shares:* {{ $json.shares }}\n\n💡 *Insights:*\n{{ $json.insights.join('\\n• ') }}\n\n🎯 Consider boosting this post or creating similar content!",
+        "additionalFields": {
+          "parseMode": "Markdown"
+        }
+      },
+      "id": "performance-alert",
+      "name": "High Performance Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1120, 600]
+    }
+  ],
+  "connections": {
+    "Daily Posting Schedule": {
+      "main": [
+        [
+          {
+            "node": "Content Generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Content Generator": {
+      "main": [
+        [
+          {
+            "node": "AI Content Enhancer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Content Enhancer": {
+      "main": [
+        [
+          {
+            "node": "Content Processor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Content Processor": {
+      "main": [
+        [
+          {
+            "node": "Post to Twitter",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Post to LinkedIn",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Post to Facebook",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Social Media Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Engagement Tracking Webhook": {
+      "main": [
+        [
+          {
+            "node": "Engagement Processor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Engagement Processor": {
+      "main": [
+        [
+          {
+            "node": "Save Engagement Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Engagement Data": {
+      "main": [
+        [
+          {
+            "node": "Check High Performance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check High Performance": {
+      "main": [
+        [
+          {
+            "node": "High Performance Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 2,
+  "updatedAt": "2024-01-15T10:00:00.000Z",
+  "versionId": "1"
+}

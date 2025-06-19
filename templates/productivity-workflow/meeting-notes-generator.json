@@ -1,0 +1,414 @@
+{
+  "name": "Meeting Notes Generator",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "filters": {
+          "labelIds": [],
+          "sender": "",
+          "subject": "Meeting Recording",
+          "readStatus": "unread"
+        },
+        "format": "resolved",
+        "options": {
+          "attachments": true,
+          "downloadAttachments": true
+        }
+      },
+      "id": "1a2b3c4d-5e6f-7g8h-9i0j-k1l2m3n4o5p6",
+      "name": "Gmail Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-oauth-credential",
+          "name": "Gmail OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.attachments }}",
+              "rightValue": "",
+              "operator": {
+                "type": "array",
+                "operation": "notEmpty"
+              }
+            },
+            {
+              "leftValue": "={{ $json.attachments[0].name }}",
+              "rightValue": ".mp3|.wav|.m4a|.mp4",
+              "operator": {
+                "type": "string",
+                "operation": "regex"
+              }
+            }
+          ],
+          "combineOperation": "all"
+        },
+        "options": {}
+      },
+      "id": "2b3c4d5e-6f7g-8h9i-0j1k-l2m3n4o5p6q7",
+      "name": "Check Audio Attachment",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "model": "whisper-1",
+        "options": {
+          "language": "en",
+          "temperature": 0,
+          "prompt": "This is a business meeting recording. Please transcribe accurately including speaker changes and important discussion points."
+        }
+      },
+      "id": "3c4d5e6f-7g8h-9i0j-1k2l-m3n4o5p6q7r8",
+      "name": "Transcribe Audio",
+      "type": "@n8n/n8n-nodes-langchain.openAiWhisper",
+      "typeVersion": 1,
+      "position": [680, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-api-credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "options": {
+          "temperature": 0.3,
+          "maxTokens": 2000
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are an expert meeting notes assistant. Your task is to analyze meeting transcripts and create comprehensive, well-structured meeting notes. Include:\n\n1. Meeting Summary (2-3 sentences)\n2. Key Discussion Points (bullet points)\n3. Decisions Made (clear list)\n4. Action Items (with responsible parties if mentioned)\n5. Next Steps\n6. Important Dates/Deadlines mentioned\n\nFormat the output in clean Markdown with proper headers and bullet points. Be concise but comprehensive."
+            },
+            {
+              "role": "user",
+              "content": "Please analyze this meeting transcript and create structured meeting notes:\n\nMeeting Subject: {{ $('Gmail Trigger').item.json.subject }}\nDate: {{ $('Gmail Trigger').item.json.date }}\nTranscript:\n{{ $json.text }}\n\nPlease create comprehensive meeting notes following the format specified."
+            }
+          ]
+        }
+      },
+      "id": "4d5e6f7g-8h9i-0j1k-2l3m-n4o5p6q7r8s9",
+      "name": "Generate Meeting Notes",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1,
+      "position": [900, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-api-credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract action items and create tasks\nconst meetingNotes = $json.response;\nconst subject = $('Gmail Trigger').item.json.subject;\nconst date = new Date($('Gmail Trigger').item.json.date);\n\n// Parse action items from the meeting notes\nconst actionItemsRegex = /(?:action items?|tasks?|to-?dos?):[\\s\\S]*?(?=\\n\\n|\\n#|$)/gi;\nconst actionItemsSection = meetingNotes.match(actionItemsRegex);\n\nlet actionItems = [];\nif (actionItemsSection && actionItemsSection[0]) {\n  const items = actionItemsSection[0].split('\\n').filter(line => \n    line.trim().startsWith('-') || line.trim().startsWith('*') || line.trim().startsWith('•')\n  );\n  \n  actionItems = items.map(item => {\n    const cleanItem = item.replace(/^[-*•]\\s*/, '').trim();\n    const responsiblePartyMatch = cleanItem.match(/\\(([^)]+)\\)$/);\n    const responsibleParty = responsiblePartyMatch ? responsiblePartyMatch[1] : 'Unassigned';\n    const task = responsiblePartyMatch ? cleanItem.replace(/\\s*\\([^)]+\\)$/, '') : cleanItem;\n    \n    return {\n      task: task,\n      responsibleParty: responsibleParty,\n      dueDate: new Date(date.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 1 week from meeting\n      priority: 'Medium',\n      status: 'Not Started',\n      meetingSubject: subject,\n      meetingDate: date.toISOString().split('T')[0]\n    };\n  });\n}\n\nconst result = {\n  json: {\n    meetingSubject: subject,\n    meetingDate: date.toISOString(),\n    meetingNotes: meetingNotes,\n    actionItems: actionItems,\n    totalActionItems: actionItems.length,\n    createdAt: new Date().toISOString()\n  }\n};\n\nreturn [result];"
+      },
+      "id": "5e6f7g8h-9i0j-1k2l-3m4n-o5p6q7r8s9t0",
+      "name": "Process Action Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "folderId": {
+          "__rl": true,
+          "value": "your-google-drive-folder-id",
+          "mode": "id"
+        },
+        "name": "Meeting Notes - {{ $json.meetingSubject }} - {{ $json.meetingDate.split('T')[0] }}",
+        "options": {
+          "parents": {
+            "parentIds": [
+              "your-google-drive-folder-id"
+            ]
+          }
+        }
+      },
+      "id": "6f7g8h9i-0j1k-2l3m-4n5o-p6q7r8s9t0u1",
+      "name": "Create Google Doc",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [1340, 300],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "google-drive-credential",
+          "name": "Google Drive OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
+        "options": {
+          "uploadType": "media"
+        },
+        "binaryData": false,
+        "fileContent": "# Meeting Notes\n\n**Subject:** {{ $('Process Action Items').item.json.meetingSubject }}\n**Date:** {{ $('Process Action Items').item.json.meetingDate.split('T')[0] }}\n**Generated:** {{ $('Process Action Items').item.json.createdAt.split('T')[0] }}\n\n---\n\n{{ $('Process Action Items').item.json.meetingNotes }}\n\n---\n\n## Action Items Summary\n\n{{ $('Process Action Items').item.json.actionItems.map(item => `- **${item.task}** (${item.responsibleParty}) - Due: ${item.dueDate}`).join('\\n') }}\n\n*Total Action Items: {{ $('Process Action Items').item.json.totalActionItems }}*"
+      },
+      "id": "7g8h9i0j-1k2l-3m4n-5o6p-q7r8s9t0u1v2",
+      "name": "Update Doc Content",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [1560, 300],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "google-drive-credential",
+          "name": "Google Drive OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "your-action-items-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Action Items"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "task": "={{ $json.task }}",
+            "responsibleParty": "={{ $json.responsibleParty }}",
+            "dueDate": "={{ $json.dueDate }}",
+            "priority": "={{ $json.priority }}",
+            "status": "={{ $json.status }}",
+            "meetingSubject": "={{ $json.meetingSubject }}",
+            "meetingDate": "={{ $json.meetingDate }}",
+            "createdAt": "={{ new Date().toISOString() }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "task",
+              "displayName": "task",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "responsibleParty",
+              "displayName": "responsibleParty",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "dueDate",
+              "displayName": "dueDate",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "priority",
+              "displayName": "priority",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "meetingSubject",
+              "displayName": "meetingSubject",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "meetingDate",
+              "displayName": "meetingDate",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "createdAt",
+              "displayName": "createdAt",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8h9i0j1k-2l3m-4n5o-6p7q-r8s9t0u1v2w3",
+      "name": "Save Action Items",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1780, 200],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "your-telegram-chat-id",
+        "text": "📝 *Meeting Notes Generated*\n\n**Subject:** {{ $('Process Action Items').item.json.meetingSubject }}\n**Date:** {{ $('Process Action Items').item.json.meetingDate.split('T')[0] }}\n**Action Items:** {{ $('Process Action Items').item.json.totalActionItems }}\n\n[📄 View Notes](https://docs.google.com/document/d/{{ $('Create Google Doc').item.json.id }})\n[📋 View Action Items](https://docs.google.com/spreadsheets/d/your-action-items-sheet-id)\n\n*Meeting notes have been automatically generated and action items tracked.*",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "9i0j1k2l-3m4n-5o6p-7q8r-s9t0u1v2w3x4",
+      "name": "Send Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1780, 400],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot-credential",
+          "name": "Telegram Bot API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Check Audio Attachment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Audio Attachment": {
+      "main": [
+        [
+          {
+            "node": "Transcribe Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcribe Audio": {
+      "main": [
+        [
+          {
+            "node": "Generate Meeting Notes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Meeting Notes": {
+      "main": [
+        [
+          {
+            "node": "Process Action Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Action Items": {
+      "main": [
+        [
+          {
+            "node": "Create Google Doc",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Save Action Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Google Doc": {
+      "main": [
+        [
+          {
+            "node": "Update Doc Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Doc Content": {
+      "main": [
+        [
+          {
+            "node": "Send Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-12-19T10:00:00.000Z",
+      "updatedAt": "2024-12-19T10:00:00.000Z",
+      "id": "productivity-automation",
+      "name": "Productivity Automation"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-12-19T10:00:00.000Z",
+  "versionId": "1"
+}

@@ -1,0 +1,580 @@
+{
+  "name": "Smart Home Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "smart-home",
+        "options": {}
+      },
+      "id": "smart-home-webhook",
+      "name": "Smart Home Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse smart home automation request\nconst data = $input.first().json;\n\n// Validate automation type\nconst validTypes = ['lights', 'temperature', 'security', 'entertainment', 'schedule', 'scene'];\nif (!data.type || !validTypes.includes(data.type)) {\n  throw new Error(`Invalid automation type. Must be one of: ${validTypes.join(', ')}`);\n}\n\n// Structure the automation data\nconst automation = {\n  type: data.type,\n  action: data.action || 'toggle',\n  device: data.device || 'all',\n  value: data.value,\n  room: data.room || 'living_room',\n  schedule: data.schedule,\n  conditions: data.conditions || {},\n  timestamp: new Date().toISOString(),\n  requestId: `automation_${Date.now()}`\n};\n\n// Add type-specific validation and defaults\nswitch (automation.type) {\n  case 'lights':\n    automation.brightness = data.brightness || 100;\n    automation.color = data.color || 'white';\n    break;\n  case 'temperature':\n    automation.targetTemp = data.targetTemp || 22;\n    automation.unit = data.unit || 'celsius';\n    break;\n  case 'security':\n    automation.mode = data.mode || 'armed';\n    automation.zones = data.zones || ['all'];\n    break;\n  case 'entertainment':\n    automation.volume = data.volume || 50;\n    automation.source = data.source || 'spotify';\n    break;\n}\n\nreturn { json: automation };"
+      },
+      "id": "parse-automation-request",
+      "name": "Parse Automation Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.type }}",
+              "rightValue": "lights",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "check-lights",
+      "name": "Check if Lights",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 180]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.type }}",
+              "rightValue": "temperature",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "check-temperature",
+      "name": "Check if Temperature",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.type }}",
+              "rightValue": "security",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "check-security",
+      "name": "Check if Security",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 420]
+    },
+    {
+      "parameters": {
+        "url": "https://api.philips-hue.com/bridge/{{ $vars.HUE_BRIDGE_ID }}/lights",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "philipsHueApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"on\": {{ $json.action === 'on' ? true : false }},\n  \"bri\": {{ Math.round($json.brightness * 2.54) }},\n  \"hue\": {{ $json.color === 'red' ? 0 : $json.color === 'green' ? 25500 : $json.color === 'blue' ? 46920 : 14922 }}\n}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "control-lights",
+      "name": "Control Smart Lights",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 180]
+    },
+    {
+      "parameters": {
+        "url": "https://api.nest.com/devices/thermostats/{{ $vars.NEST_DEVICE_ID }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "nestApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"target_temperature_c\": {{ $json.targetTemp }},\n  \"hvac_mode\": \"heat\"\n}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "control-thermostat",
+      "name": "Control Thermostat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.ring.com/clients_api/locations/{{ $vars.RING_LOCATION_ID }}/modes",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "ringApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"mode\": \"{{ $json.mode }}\"\n}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "control-security",
+      "name": "Control Security System",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 420]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process automation results and create response\nconst automation = $input.first().json;\nconst apiResponse = $input.last().json;\n\n// Determine success based on API response\nlet success = true;\nlet message = '';\nlet details = {};\n\nif (apiResponse && apiResponse.error) {\n  success = false;\n  message = `Failed to control ${automation.type}: ${apiResponse.error}`;\n} else {\n  switch (automation.type) {\n    case 'lights':\n      message = `Lights ${automation.action} in ${automation.room}`;\n      details = {\n        brightness: automation.brightness,\n        color: automation.color,\n        device: automation.device\n      };\n      break;\n    case 'temperature':\n      message = `Temperature set to ${automation.targetTemp}°${automation.unit.charAt(0).toUpperCase()}`;\n      details = {\n        targetTemp: automation.targetTemp,\n        unit: automation.unit,\n        room: automation.room\n      };\n      break;\n    case 'security':\n      message = `Security system ${automation.mode}`;\n      details = {\n        mode: automation.mode,\n        zones: automation.zones\n      };\n      break;\n    default:\n      message = `${automation.type} automation executed`;\n  }\n}\n\nconst result = {\n  requestId: automation.requestId,\n  success: success,\n  message: message,\n  type: automation.type,\n  action: automation.action,\n  room: automation.room,\n  details: details,\n  timestamp: automation.timestamp,\n  completedAt: new Date().toISOString()\n};\n\nreturn { json: result };"
+      },
+      "id": "process-automation-result",
+      "name": "Process Automation Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "spreadsheet",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms",
+          "mode": "list",
+          "cachedResultName": "Smart Home Log"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Automation History"
+        },
+        "columnToMatchOn": "requestId",
+        "valueInputMode": "defineBelow",
+        "fieldsUi": {
+          "values": [
+            {
+              "fieldId": "requestId",
+              "fieldValue": "={{ $json.requestId }}"
+            },
+            {
+              "fieldId": "timestamp",
+              "fieldValue": "={{ $json.timestamp }}"
+            },
+            {
+              "fieldId": "type",
+              "fieldValue": "={{ $json.type }}"
+            },
+            {
+              "fieldId": "action",
+              "fieldValue": "={{ $json.action }}"
+            },
+            {
+              "fieldId": "room",
+              "fieldValue": "={{ $json.room }}"
+            },
+            {
+              "fieldId": "success",
+              "fieldValue": "={{ $json.success }}"
+            },
+            {
+              "fieldId": "message",
+              "fieldValue": "={{ $json.message }}"
+            },
+            {
+              "fieldId": "details",
+              "fieldValue": "={{ JSON.stringify($json.details) }}"
+            },
+            {
+              "fieldId": "completedAt",
+              "fieldValue": "={{ $json.completedAt }}"
+            }
+          ]
+        }
+      },
+      "id": "log-automation",
+      "name": "Log Automation",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.success }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "check-success",
+      "name": "Check Success",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "accessToken",
+        "chatId": "-1001234567890",
+        "text": "🏠 *Smart Home Automation*\n\n✅ *Success:* {{ $json.message }}\n🏷️ *Type:* {{ $json.type }}\n🎯 *Action:* {{ $json.action }}\n🏠 *Room:* {{ $json.room }}\n⏰ *Time:* {{ $json.completedAt.split('T')[1].split('.')[0] }}\n\n📋 *Details:* {{ JSON.stringify($json.details) }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "success-notification",
+      "name": "Success Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1780, 180]
+    },
+    {
+      "parameters": {
+        "authentication": "accessToken",
+        "chatId": "-1001234567890",
+        "text": "🏠 *Smart Home Automation Failed*\n\n❌ *Error:* {{ $json.message }}\n🏷️ *Type:* {{ $json.type }}\n🎯 *Action:* {{ $json.action }}\n🏠 *Room:* {{ $json.room }}\n⏰ *Time:* {{ $json.completedAt.split('T')[1].split('.')[0] }}\n\n🔧 Please check device connectivity and try again.",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "failure-notification",
+      "name": "Failure Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1780, 420]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": {{ $json.success }},\n  \"requestId\": \"{{ $json.requestId }}\",\n  \"message\": \"{{ $json.message }}\",\n  \"type\": \"{{ $json.type }}\",\n  \"action\": \"{{ $json.action }}\",\n  \"room\": \"{{ $json.room }}\",\n  \"details\": {{ JSON.stringify($json.details) }},\n  \"timestamp\": \"{{ $json.completedAt }}\"\n}"
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2000, 300]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 18 * * *"
+            }
+          ]
+        }
+      },
+      "id": "evening-routine-trigger",
+      "name": "Evening Routine Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Create evening routine automation\nconst eveningRoutine = {\n  type: 'scene',\n  action: 'activate',\n  scene: 'evening',\n  timestamp: new Date().toISOString(),\n  requestId: `evening_routine_${Date.now()}`,\n  automations: [\n    {\n      type: 'lights',\n      action: 'on',\n      room: 'living_room',\n      brightness: 60,\n      color: 'warm_white'\n    },\n    {\n      type: 'lights',\n      action: 'on',\n      room: 'kitchen',\n      brightness: 80,\n      color: 'white'\n    },\n    {\n      type: 'temperature',\n      action: 'set',\n      targetTemp: 21,\n      unit: 'celsius'\n    },\n    {\n      type: 'security',\n      action: 'arm',\n      mode: 'home',\n      zones: ['perimeter']\n    }\n  ]\n};\n\nreturn { json: eveningRoutine };"
+      },
+      "id": "create-evening-routine",
+      "name": "Create Evening Routine",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Execute multiple automations in sequence\nconst routine = $input.first().json;\nconst results = [];\n\n// Simulate executing each automation\nfor (const automation of routine.automations) {\n  const result = {\n    type: automation.type,\n    action: automation.action,\n    room: automation.room || 'all',\n    success: true, // In real implementation, this would be based on actual API calls\n    message: `${automation.type} ${automation.action} executed successfully`,\n    details: automation\n  };\n  results.push(result);\n}\n\nconst routineResult = {\n  requestId: routine.requestId,\n  scene: routine.scene,\n  timestamp: routine.timestamp,\n  completedAt: new Date().toISOString(),\n  automations: results,\n  success: results.every(r => r.success),\n  message: `Evening routine executed with ${results.length} automations`\n};\n\nreturn { json: routineResult };"
+      },
+      "id": "execute-evening-routine",
+      "name": "Execute Evening Routine",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 600]
+    },
+    {
+      "parameters": {
+        "authentication": "accessToken",
+        "chatId": "-1001234567890",
+        "text": "🌅 *Evening Routine Activated*\n\n🏠 *Scene:* {{ $json.scene }}\n⏰ *Time:* {{ $json.completedAt.split('T')[1].split('.')[0] }}\n🎯 *Automations:* {{ $json.automations.length }}\n✅ *Status:* {{ $json.success ? 'All successful' : 'Some failed' }}\n\n📋 *Actions Performed:*\n{{ $json.automations.map(a => `• ${a.type} ${a.action} in ${a.room}`).join('\\n') }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "routine-notification",
+      "name": "Routine Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [900, 600]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Smart Home Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Automation Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Automation Request": {
+      "main": [
+        [
+          {
+            "node": "Check if Lights",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check if Temperature",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check if Security",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if Lights": {
+      "main": [
+        [
+          {
+            "node": "Control Smart Lights",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Check if Temperature": {
+      "main": [
+        [
+          {
+            "node": "Control Thermostat",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Check if Security": {
+      "main": [
+        [
+          {
+            "node": "Control Security System",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Control Smart Lights": {
+      "main": [
+        [
+          {
+            "node": "Process Automation Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Control Thermostat": {
+      "main": [
+        [
+          {
+            "node": "Process Automation Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Control Security System": {
+      "main": [
+        [
+          {
+            "node": "Process Automation Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Automation Result": {
+      "main": [
+        [
+          {
+            "node": "Log Automation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Automation": {
+      "main": [
+        [
+          {
+            "node": "Check Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Success": {
+      "main": [
+        [
+          {
+            "node": "Success Notification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Failure Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Success Notification": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Failure Notification": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evening Routine Trigger": {
+      "main": [
+        [
+          {
+            "node": "Create Evening Routine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Evening Routine": {
+      "main": [
+        [
+          {
+            "node": "Execute Evening Routine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Evening Routine": {
+      "main": [
+        [
+          {
+            "node": "Routine Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "12345"
+  },
+  "id": "smart-home-automation",
+  "tags": []
+}

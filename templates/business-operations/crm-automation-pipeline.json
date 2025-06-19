@@ -1,0 +1,431 @@
+{
+  "name": "CRM Automation Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "crm-webhook",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "CRM Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse and validate incoming CRM data\nconst data = $input.first().json;\n\n// Validate required fields\nif (!data.email || !data.name) {\n  throw new Error('Missing required fields: email and name');\n}\n\n// Clean and structure the data\nconst cleanedData = {\n  email: data.email.toLowerCase().trim(),\n  name: data.name.trim(),\n  company: data.company || '',\n  phone: data.phone || '',\n  source: data.source || 'unknown',\n  status: 'new',\n  score: 0,\n  tags: data.tags || [],\n  customFields: data.customFields || {},\n  timestamp: new Date().toISOString()\n};\n\n// Calculate initial lead score\nlet score = 0;\nif (cleanedData.company) score += 20;\nif (cleanedData.phone) score += 15;\nif (cleanedData.source === 'website') score += 10;\nif (cleanedData.source === 'referral') score += 25;\n\ncleanedData.score = score;\n\n// Determine lead status based on score\nif (score >= 40) {\n  cleanedData.status = 'hot';\n} else if (score >= 20) {\n  cleanedData.status = 'warm';\n} else {\n  cleanedData.status = 'cold';\n}\n\nreturn { json: cleanedData };"
+      },
+      "id": "data-processor",
+      "name": "Process Lead Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.email }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "validation-check",
+      "name": "Validate Data",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.clearbit.com/v2/people/find",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "clearbitApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "email",
+              "value": "={{ $json.email }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "clearbit-enrichment",
+      "name": "Enrich with Clearbit",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 180]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge original data with Clearbit enrichment\nconst originalData = $input.first().json;\nconst clearbitData = $input.last().json;\n\n// Extract useful information from Clearbit\nlet enrichedData = { ...originalData };\n\nif (clearbitData && !clearbitData.error) {\n  // Add enriched company information\n  if (clearbitData.employment && clearbitData.employment.name) {\n    enrichedData.company = clearbitData.employment.name;\n    enrichedData.jobTitle = clearbitData.employment.title || '';\n    enrichedData.companyDomain = clearbitData.employment.domain || '';\n  }\n  \n  // Add social profiles\n  if (clearbitData.twitter) {\n    enrichedData.twitterHandle = clearbitData.twitter.handle;\n  }\n  \n  if (clearbitData.linkedin) {\n    enrichedData.linkedinUrl = clearbitData.linkedin.handle;\n  }\n  \n  // Add location information\n  if (clearbitData.location) {\n    enrichedData.location = clearbitData.location;\n  }\n  \n  // Recalculate score with enriched data\n  let newScore = enrichedData.score;\n  if (clearbitData.employment && clearbitData.employment.name) newScore += 15;\n  if (clearbitData.employment && clearbitData.employment.title) newScore += 10;\n  if (clearbitData.twitter) newScore += 5;\n  if (clearbitData.linkedin) newScore += 5;\n  \n  enrichedData.score = newScore;\n  enrichedData.enriched = true;\n} else {\n  enrichedData.enriched = false;\n}\n\n// Update status based on new score\nif (enrichedData.score >= 60) {\n  enrichedData.status = 'hot';\n} else if (enrichedData.score >= 30) {\n  enrichedData.status = 'warm';\n} else {\n  enrichedData.status = 'cold';\n}\n\nreturn { json: enrichedData };"
+      },
+      "id": "data-merger",
+      "name": "Merge Enriched Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "spreadsheet",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms",
+          "mode": "list",
+          "cachedResultName": "CRM Leads Database"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1"
+        },
+        "columnToMatchOn": "email",
+        "valueInputMode": "defineBelow",
+        "fieldsUi": {
+          "values": [
+            {
+              "fieldId": "email",
+              "fieldValue": "={{ $json.email }}"
+            },
+            {
+              "fieldId": "name",
+              "fieldValue": "={{ $json.name }}"
+            },
+            {
+              "fieldId": "company",
+              "fieldValue": "={{ $json.company }}"
+            },
+            {
+              "fieldId": "phone",
+              "fieldValue": "={{ $json.phone }}"
+            },
+            {
+              "fieldId": "source",
+              "fieldValue": "={{ $json.source }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "={{ $json.status }}"
+            },
+            {
+              "fieldId": "score",
+              "fieldValue": "={{ $json.score }}"
+            },
+            {
+              "fieldId": "jobTitle",
+              "fieldValue": "={{ $json.jobTitle }}"
+            },
+            {
+              "fieldId": "enriched",
+              "fieldValue": "={{ $json.enriched }}"
+            },
+            {
+              "fieldId": "timestamp",
+              "fieldValue": "={{ $json.timestamp }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "save-to-sheets",
+      "name": "Save to CRM Database",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "hot",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "hot-lead-check",
+      "name": "Check if Hot Lead",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "options": {
+          "temperature": 0.7
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "You are a sales assistant. Generate a personalized welcome email for a new lead with the following information:\n\nName: {{ $json.name }}\nCompany: {{ $json.company }}\nJob Title: {{ $json.jobTitle }}\nSource: {{ $json.source }}\nLead Score: {{ $json.score }}\n\nThe email should be professional, welcoming, and include a soft call-to-action to schedule a demo or consultation. Keep it concise and personalized.",
+              "role": "user"
+            }
+          ]
+        }
+      },
+      "id": "generate-email",
+      "name": "Generate Welcome Email",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1,
+      "position": [1780, 180]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "sendTo": "={{ $json.email }}",
+        "subject": "Welcome to our platform, {{ $json.name }}!",
+        "emailType": "text",
+        "message": "={{ $('Generate Welcome Email').first().json.choices[0].message.content }}",
+        "options": {
+          "ccList": "sales@company.com"
+        }
+      },
+      "id": "send-welcome-email",
+      "name": "Send Welcome Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [2000, 180]
+    },
+    {
+      "parameters": {
+        "authentication": "accessToken",
+        "chatId": "-1001234567890",
+        "text": "🔥 *Hot Lead Alert!*\n\n👤 *Name:* {{ $json.name }}\n🏢 *Company:* {{ $json.company }}\n📧 *Email:* {{ $json.email }}\n📱 *Phone:* {{ $json.phone }}\n💼 *Job Title:* {{ $json.jobTitle }}\n📊 *Score:* {{ $json.score }}\n🎯 *Source:* {{ $json.source }}\n\n✅ Welcome email sent automatically",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "notify-sales-team",
+      "name": "Notify Sales Team",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1780, 420]
+    },
+    {
+      "parameters": {
+        "authentication": "accessToken",
+        "chatId": "-1001234567890",
+        "text": "📝 *New Lead Added to CRM*\n\n👤 *Name:* {{ $json.name }}\n🏢 *Company:* {{ $json.company }}\n📧 *Email:* {{ $json.email }}\n🎯 *Source:* {{ $json.source }}\n📊 *Score:* {{ $json.score }}\n🌡️ *Status:* {{ $json.status }}\n🔍 *Enriched:* {{ $json.enriched ? 'Yes' : 'No' }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "general-notification",
+      "name": "General Lead Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1560, 500]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"leadId\": \"{{ $json.email }}\",\n  \"status\": \"{{ $json.status }}\",\n  \"score\": {{ $json.score }},\n  \"enriched\": {{ $json.enriched }},\n  \"message\": \"Lead successfully processed and added to CRM\"\n}"
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2220, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": false,\n  \"error\": \"Invalid data provided\",\n  \"message\": \"Please provide valid email and name\"\n}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "error-response",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [680, 500]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "CRM Webhook": {
+      "main": [
+        [
+          {
+            "node": "Process Lead Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Lead Data": {
+      "main": [
+        [
+          {
+            "node": "Validate Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Data": {
+      "main": [
+        [
+          {
+            "node": "Enrich with Clearbit",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enrich with Clearbit": {
+      "main": [
+        [
+          {
+            "node": "Merge Enriched Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Enriched Data": {
+      "main": [
+        [
+          {
+            "node": "Save to CRM Database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to CRM Database": {
+      "main": [
+        [
+          {
+            "node": "Check if Hot Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if Hot Lead": {
+      "main": [
+        [
+          {
+            "node": "Generate Welcome Email",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify Sales Team",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "General Lead Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Welcome Email": {
+      "main": [
+        [
+          {
+            "node": "Send Welcome Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Welcome Email": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Sales Team": {
+      "main": [
+        []
+      ]
+    },
+    "General Lead Notification": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "12345"
+  },
+  "id": "crm-automation-pipeline",
+  "tags": []
+}

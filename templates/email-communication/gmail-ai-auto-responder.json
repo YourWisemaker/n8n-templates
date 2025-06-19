@@ -1,0 +1,211 @@
+{
+  "name": "Gmail AI Auto-Responder",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "filters": {
+          "labelIds": [],
+          "sender": "",
+          "subject": "",
+          "readStatus": "unread"
+        },
+        "format": "resolved",
+        "options": {
+          "attachments": false,
+          "downloadAttachments": false
+        }
+      },
+      "id": "1a2b3c4d-5e6f-7g8h-9i0j-k1l2m3n4o5p6",
+      "name": "Gmail Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-oauth-credential",
+          "name": "Gmail OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "options": {
+          "temperature": 0.7,
+          "maxTokens": 500
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a professional email assistant. Generate appropriate, polite, and helpful email responses. Keep responses concise and professional. Always maintain a friendly but business-appropriate tone."
+            },
+            {
+              "role": "user",
+              "content": "Please generate a professional email response to the following email:\n\nFrom: {{ $json.from }}\nSubject: {{ $json.subject }}\nContent: {{ $json.textPlain }}\n\nGenerate an appropriate response that acknowledges their message and provides helpful information or next steps."
+            }
+          ]
+        }
+      },
+      "id": "2b3c4d5e-6f7g-8h9i-0j1k-l2m3n4o5p6q7",
+      "name": "OpenAI GPT-4",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1,
+      "position": [460, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-api-credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "createDraft",
+        "message": {
+          "to": "{{ $('Gmail Trigger').item.json.from }}",
+          "subject": "Re: {{ $('Gmail Trigger').item.json.subject }}",
+          "body": "{{ $json.response }}",
+          "bodyType": "text"
+        },
+        "options": {
+          "threadId": "{{ $('Gmail Trigger').item.json.threadId }}"
+        }
+      },
+      "id": "3c4d5e6f-7g8h-9i0j-1k2l-m3n4o5p6q7r8",
+      "name": "Create Draft Reply",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [680, 300],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-oauth-credential",
+          "name": "Gmail OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{ $('Gmail Trigger').item.json.id }}",
+        "labelIds": ["AI_PROCESSED"]
+      },
+      "id": "4d5e6f7g-8h9i-0j1k-2l3m-n4o5p6q7r8s9",
+      "name": "Mark as Processed",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [900, 300],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-oauth-credential",
+          "name": "Gmail OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $('Gmail Trigger').item.json.labelIds }}",
+              "rightValue": "AI_PROCESSED",
+              "operator": {
+                "type": "array",
+                "operation": "notContains"
+              }
+            },
+            {
+              "leftValue": "={{ $('Gmail Trigger').item.json.from }}",
+              "rightValue": "noreply",
+              "operator": {
+                "type": "string",
+                "operation": "notContains"
+              }
+            }
+          ],
+          "combineOperation": "all"
+        },
+        "options": {}
+      },
+      "id": "5e6f7g8h-9i0j-1k2l-3m4n-o5p6q7r8s9t0",
+      "name": "Filter Valid Emails",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 120]
+    }
+  ],
+  "connections": {
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Filter Valid Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Valid Emails": {
+      "main": [
+        [
+          {
+            "node": "OpenAI GPT-4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI GPT-4": {
+      "main": [
+        [
+          {
+            "node": "Create Draft Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Draft Reply": {
+      "main": [
+        [
+          {
+            "node": "Mark as Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-12-19T10:00:00.000Z",
+      "updatedAt": "2024-12-19T10:00:00.000Z",
+      "id": "email-automation",
+      "name": "Email Automation"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-12-19T10:00:00.000Z",
+  "versionId": "1"
+}

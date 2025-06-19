@@ -1,0 +1,368 @@
+{
+  "name": "Google Sheets Data Sync",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "id": "1a2b3c4d-5e6f-7g8h-9i0j-k1l2m3n4o5p6",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.example.com/data",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "2b3c4d5e-6f7g-8h9i-0j1k-l2m3n4o5p6q7",
+      "name": "Fetch API Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [460, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "api-header-auth",
+          "name": "API Header Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Transform and clean the data\nconst items = $input.all();\nconst transformedData = [];\n\nfor (const item of items) {\n  const data = item.json;\n  \n  // Example transformation - adapt to your data structure\n  if (Array.isArray(data)) {\n    for (const record of data) {\n      transformedData.push({\n        json: {\n          timestamp: new Date().toISOString(),\n          id: record.id || '',\n          name: record.name || '',\n          value: parseFloat(record.value) || 0,\n          category: record.category || 'Unknown',\n          status: record.status || 'Active',\n          lastUpdated: record.updated_at || new Date().toISOString(),\n          source: 'API'\n        }\n      });\n    }\n  } else {\n    // Single object\n    transformedData.push({\n      json: {\n        timestamp: new Date().toISOString(),\n        id: data.id || '',\n        name: data.name || '',\n        value: parseFloat(data.value) || 0,\n        category: data.category || 'Unknown',\n        status: data.status || 'Active',\n        lastUpdated: data.updated_at || new Date().toISOString(),\n        source: 'API'\n      }\n    });\n  }\n}\n\nreturn transformedData;"
+      },
+      "id": "3c4d5e6f-7g8h-9i0j-1k2l-m3n4o5p6q7r8",
+      "name": "Transform Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "your-google-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Data"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $json.timestamp }}",
+            "id": "={{ $json.id }}",
+            "name": "={{ $json.name }}",
+            "value": "={{ $json.value }}",
+            "category": "={{ $json.category }}",
+            "status": "={{ $json.status }}",
+            "lastUpdated": "={{ $json.lastUpdated }}",
+            "source": "={{ $json.source }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "value",
+              "displayName": "value",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "category",
+              "displayName": "category",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "lastUpdated",
+              "displayName": "lastUpdated",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4d5e6f7g-8h9i-0j1k-2l3m-n4o5p6q7r8s9",
+      "name": "Update Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [900, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate summary statistics\nconst items = $input.all();\nconst totalRecords = items.length;\nconst categories = {};\nconst statuses = {};\nlet totalValue = 0;\n\nfor (const item of items) {\n  const data = item.json;\n  \n  // Count categories\n  categories[data.category] = (categories[data.category] || 0) + 1;\n  \n  // Count statuses\n  statuses[data.status] = (statuses[data.status] || 0) + 1;\n  \n  // Sum values\n  totalValue += data.value || 0;\n}\n\nconst summary = {\n  json: {\n    timestamp: new Date().toISOString(),\n    totalRecords: totalRecords,\n    totalValue: totalValue,\n    averageValue: totalRecords > 0 ? totalValue / totalRecords : 0,\n    categories: categories,\n    statuses: statuses,\n    lastSyncTime: new Date().toISOString()\n  }\n};\n\nreturn [summary];"
+      },
+      "id": "5e6f7g8h-9i0j-1k2l-3m4n-o5p6q7r8s9t0",
+      "name": "Generate Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "your-google-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=1",
+          "mode": "list",
+          "cachedResultName": "Summary"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $json.timestamp }}",
+            "totalRecords": "={{ $json.totalRecords }}",
+            "totalValue": "={{ $json.totalValue }}",
+            "averageValue": "={{ $json.averageValue }}",
+            "categories": "={{ JSON.stringify($json.categories) }}",
+            "statuses": "={{ JSON.stringify($json.statuses) }}",
+            "lastSyncTime": "={{ $json.lastSyncTime }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "totalRecords",
+              "displayName": "totalRecords",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "totalValue",
+              "displayName": "totalValue",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "averageValue",
+              "displayName": "averageValue",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "categories",
+              "displayName": "categories",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "statuses",
+              "displayName": "statuses",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "lastSyncTime",
+              "displayName": "lastSyncTime",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6f7g8h9i-0j1k-2l3m-4n5o-p6q7r8s9t0u1",
+      "name": "Update Summary Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1340, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "your-telegram-chat-id",
+        "text": "📊 *Data Sync Complete*\n\n✅ Records processed: {{ $('Generate Summary').item.json.totalRecords }}\n💰 Total value: ${{ $('Generate Summary').item.json.totalValue.toFixed(2) }}\n📈 Average value: ${{ $('Generate Summary').item.json.averageValue.toFixed(2) }}\n🕐 Last sync: {{ $('Generate Summary').item.json.lastSyncTime }}\n\n[View Dashboard](https://docs.google.com/spreadsheets/d/your-google-sheet-id)",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "7g8h9i0j-1k2l-3m4n-5o6p-q7r8s9t0u1v2",
+      "name": "Send Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1560, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot-credential",
+          "name": "Telegram Bot API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch API Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch API Data": {
+      "main": [
+        [
+          {
+            "node": "Transform Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform Data": {
+      "main": [
+        [
+          {
+            "node": "Update Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Summary": {
+      "main": [
+        [
+          {
+            "node": "Update Summary Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Summary Sheet": {
+      "main": [
+        [
+          {
+            "node": "Send Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-12-19T10:00:00.000Z",
+      "updatedAt": "2024-12-19T10:00:00.000Z",
+      "id": "data-analytics",
+      "name": "Data Analytics"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-12-19T10:00:00.000Z",
+  "versionId": "1"
+}

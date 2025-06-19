@@ -1,0 +1,540 @@
+{
+  "name": "Data Backup Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 2 * * *"
+            }
+          ]
+        }
+      },
+      "id": "daily-backup-trigger",
+      "name": "Daily Backup Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Define backup sources and configurations\nconst backupConfig = {\n  timestamp: new Date().toISOString(),\n  backupId: `backup_${Date.now()}`,\n  sources: [\n    {\n      name: 'Google Sheets Database',\n      type: 'googlesheets',\n      spreadsheetId: '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms',\n      sheets: ['Users', 'Orders', 'Analytics']\n    },\n    {\n      name: 'Gmail Attachments',\n      type: 'gmail',\n      query: 'has:attachment',\n      maxResults: 100\n    },\n    {\n      name: 'Google Drive Files',\n      type: 'googledrive',\n      folderId: '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms',\n      fileTypes: ['pdf', 'docx', 'xlsx', 'csv']\n    }\n  ],\n  destination: {\n    type: 'googledrive',\n    backupFolderId: '1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms'\n  }\n};\n\nreturn { json: backupConfig };"
+      },
+      "id": "backup-config",
+      "name": "Setup Backup Configuration",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "spreadsheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $json.sources[0].spreadsheetId }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list"
+        },
+        "options": {
+          "range": "A:Z"
+        }
+      },
+      "id": "backup-sheets-data",
+      "name": "Backup Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [680, 180]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "format": "simple",
+        "simple": {
+          "search": "={{ $json.sources[1].query }}",
+          "maxResults": "={{ $json.sources[1].maxResults }}"
+        },
+        "options": {
+          "attachments": true
+        }
+      },
+      "id": "backup-gmail-attachments",
+      "name": "Backup Gmail Attachments",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "file",
+        "operation": "list",
+        "folderId": {
+          "__rl": true,
+          "value": "={{ $json.sources[2].folderId }}",
+          "mode": "id"
+        },
+        "options": {
+          "fields": "files(id,name,mimeType,size,modifiedTime)"
+        }
+      },
+      "id": "list-drive-files",
+      "name": "List Google Drive Files",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [680, 420]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process and prepare backup data\nconst config = $input.first().json;\nconst sheetsData = $input.all()[1] ? $input.all()[1].json : [];\nconst gmailData = $input.all()[2] ? $input.all()[2].json : [];\nconst driveFiles = $input.all()[3] ? $input.all()[3].json.files || [] : [];\n\n// Create backup manifest\nconst backupManifest = {\n  backupId: config.backupId,\n  timestamp: config.timestamp,\n  sources: {\n    googleSheets: {\n      recordCount: Array.isArray(sheetsData) ? sheetsData.length : 0,\n      data: sheetsData\n    },\n    gmailAttachments: {\n      emailCount: Array.isArray(gmailData) ? gmailData.length : 0,\n      attachmentCount: gmailData.reduce((count, email) => {\n        return count + (email.attachments ? email.attachments.length : 0);\n      }, 0),\n      data: gmailData\n    },\n    googleDriveFiles: {\n      fileCount: driveFiles.length,\n      totalSize: driveFiles.reduce((size, file) => size + (parseInt(file.size) || 0), 0),\n      files: driveFiles\n    }\n  },\n  status: 'in_progress'\n};\n\n// Create CSV content for sheets data\nif (sheetsData.length > 0) {\n  const headers = Object.keys(sheetsData[0]);\n  const csvContent = [\n    headers.join(','),\n    ...sheetsData.map(row => headers.map(header => `\"${(row[header] || '').toString().replace(/\"/g, '\"\"')}\"`).join(','))\n  ].join('\\n');\n  \n  backupManifest.csvContent = csvContent;\n}\n\nreturn { json: backupManifest };"
+      },
+      "id": "process-backup-data",
+      "name": "Process Backup Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "file",
+        "operation": "upload",
+        "fileContent": {
+          "property": "csvContent"
+        },
+        "name": "backup_sheets_{{ $json.backupId }}.csv",
+        "parents": {
+          "__rl": true,
+          "value": "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms",
+          "mode": "id"
+        },
+        "options": {
+          "description": "Automated backup of Google Sheets data - {{ $json.timestamp }}"
+        }
+      },
+      "id": "upload-sheets-backup",
+      "name": "Upload Sheets Backup",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [1120, 180]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "file",
+        "operation": "upload",
+        "fileContent": {
+          "property": "manifestContent"
+        },
+        "name": "backup_manifest_{{ $json.backupId }}.json",
+        "parents": {
+          "__rl": true,
+          "value": "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms",
+          "mode": "id"
+        },
+        "options": {
+          "description": "Backup manifest file - {{ $json.timestamp }}"
+        }
+      },
+      "id": "upload-manifest",
+      "name": "Upload Backup Manifest",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Create manifest file content\nconst manifest = $input.first().json;\n\n// Remove the CSV content from manifest (it's already uploaded)\nconst cleanManifest = { ...manifest };\ndelete cleanManifest.csvContent;\n\n// Add completion status\ncleanManifest.status = 'completed';\ncleanManifest.completedAt = new Date().toISOString();\n\n// Calculate backup summary\nconst summary = {\n  totalFiles: 1 + manifest.sources.googleDriveFiles.fileCount, // +1 for sheets backup\n  totalSize: manifest.sources.googleDriveFiles.totalSize,\n  sheetsRecords: manifest.sources.googleSheets.recordCount,\n  emailsProcessed: manifest.sources.gmailAttachments.emailCount,\n  attachmentsFound: manifest.sources.gmailAttachments.attachmentCount\n};\n\ncleanManifest.summary = summary;\n\nreturn {\n  json: {\n    ...cleanManifest,\n    manifestContent: JSON.stringify(cleanManifest, null, 2)\n  }\n};"
+      },
+      "id": "create-manifest",
+      "name": "Create Backup Manifest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 420]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "spreadsheet",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms",
+          "mode": "list",
+          "cachedResultName": "Backup Log"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Backup History"
+        },
+        "columnToMatchOn": "backupId",
+        "valueInputMode": "defineBelow",
+        "fieldsUi": {
+          "values": [
+            {
+              "fieldId": "backupId",
+              "fieldValue": "={{ $json.backupId }}"
+            },
+            {
+              "fieldId": "timestamp",
+              "fieldValue": "={{ $json.timestamp }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "={{ $json.status }}"
+            },
+            {
+              "fieldId": "totalFiles",
+              "fieldValue": "={{ $json.summary.totalFiles }}"
+            },
+            {
+              "fieldId": "totalSize",
+              "fieldValue": "={{ $json.summary.totalSize }}"
+            },
+            {
+              "fieldId": "sheetsRecords",
+              "fieldValue": "={{ $json.summary.sheetsRecords }}"
+            },
+            {
+              "fieldId": "emailsProcessed",
+              "fieldValue": "={{ $json.summary.emailsProcessed }}"
+            },
+            {
+              "fieldId": "completedAt",
+              "fieldValue": "={{ $json.completedAt }}"
+            }
+          ]
+        }
+      },
+      "id": "log-backup-history",
+      "name": "Log Backup History",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "completed",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "check-backup-success",
+      "name": "Check Backup Success",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "accessToken",
+        "chatId": "-1001234567890",
+        "text": "✅ *Daily Backup Completed Successfully*\n\n🆔 *Backup ID:* {{ $json.backupId }}\n📅 *Date:* {{ $json.timestamp.split('T')[0] }}\n⏰ *Time:* {{ $json.timestamp.split('T')[1].split('.')[0] }}\n\n📊 *Summary:*\n• 📁 Total Files: {{ $json.summary.totalFiles }}\n• 📋 Sheets Records: {{ $json.summary.sheetsRecords }}\n• 📧 Emails Processed: {{ $json.summary.emailsProcessed }}\n• 📎 Attachments Found: {{ $json.summary.attachmentsFound }}\n• 💾 Total Size: {{ Math.round($json.summary.totalSize / 1024 / 1024) }} MB\n\n🔗 Files backed up to Google Drive",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "success-notification",
+      "name": "Success Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1780, 180]
+    },
+    {
+      "parameters": {
+        "authentication": "accessToken",
+        "chatId": "-1001234567890",
+        "text": "❌ *Daily Backup Failed*\n\n🆔 *Backup ID:* {{ $json.backupId }}\n📅 *Date:* {{ $json.timestamp.split('T')[0] }}\n⏰ *Time:* {{ $json.timestamp.split('T')[1].split('.')[0] }}\n\n⚠️ *Status:* {{ $json.status }}\n\n🔧 Please check the backup configuration and try again.",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "failure-notification",
+      "name": "Failure Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1780, 420]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 1 * *"
+            }
+          ]
+        }
+      },
+      "id": "monthly-cleanup-trigger",
+      "name": "Monthly Cleanup Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 600]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "spreadsheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms",
+          "mode": "list",
+          "cachedResultName": "Backup Log"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Backup History"
+        },
+        "options": {
+          "range": "A:H"
+        }
+      },
+      "id": "get-backup-history",
+      "name": "Get Backup History",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [460, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate monthly backup report\nconst backupHistory = $input.all();\n\nif (!backupHistory || backupHistory.length === 0) {\n  return { json: { message: 'No backup history found' } };\n}\n\n// Calculate statistics for the past month\nconst now = new Date();\nconst lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);\nconst thisMonth = new Date(now.getFullYear(), now.getMonth(), 1);\n\nconst monthlyBackups = backupHistory.filter(backup => {\n  const backupDate = new Date(backup.json.timestamp);\n  return backupDate >= lastMonth && backupDate < thisMonth;\n});\n\nconst stats = {\n  totalBackups: monthlyBackups.length,\n  successfulBackups: monthlyBackups.filter(b => b.json.status === 'completed').length,\n  failedBackups: monthlyBackups.filter(b => b.json.status !== 'completed').length,\n  totalFilesBackedUp: monthlyBackups.reduce((sum, b) => sum + (parseInt(b.json.totalFiles) || 0), 0),\n  totalSizeBackedUp: monthlyBackups.reduce((sum, b) => sum + (parseInt(b.json.totalSize) || 0), 0),\n  totalRecordsBackedUp: monthlyBackups.reduce((sum, b) => sum + (parseInt(b.json.sheetsRecords) || 0), 0),\n  month: lastMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })\n};\n\n// Calculate success rate\nstats.successRate = stats.totalBackups > 0 ? Math.round((stats.successfulBackups / stats.totalBackups) * 100) : 0;\n\n// Convert size to MB\nstats.totalSizeMB = Math.round(stats.totalSizeBackedUp / 1024 / 1024);\n\nreturn { json: stats };"
+      },
+      "id": "generate-monthly-report",
+      "name": "Generate Monthly Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 600]
+    },
+    {
+      "parameters": {
+        "authentication": "accessToken",
+        "chatId": "-1001234567890",
+        "text": "📊 *Monthly Backup Report - {{ $json.month }}*\n\n📈 *Statistics:*\n• 🔄 Total Backups: {{ $json.totalBackups }}\n• ✅ Successful: {{ $json.successfulBackups }}\n• ❌ Failed: {{ $json.failedBackups }}\n• 📊 Success Rate: {{ $json.successRate }}%\n\n💾 *Data Backed Up:*\n• 📁 Total Files: {{ $json.totalFilesBackedUp }}\n• 📋 Total Records: {{ $json.totalRecordsBackedUp }}\n• 💿 Total Size: {{ $json.totalSizeMB }} MB\n\n{{ $json.successRate >= 95 ? '🎉 Excellent backup performance!' : $json.successRate >= 80 ? '👍 Good backup performance' : '⚠️ Backup performance needs attention' }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "monthly-report-notification",
+      "name": "Monthly Report Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [900, 600]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Daily Backup Trigger": {
+      "main": [
+        [
+          {
+            "node": "Setup Backup Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Setup Backup Configuration": {
+      "main": [
+        [
+          {
+            "node": "Backup Google Sheets",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Backup Gmail Attachments",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "List Google Drive Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Backup Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Process Backup Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Backup Gmail Attachments": {
+      "main": [
+        [
+          {
+            "node": "Process Backup Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Google Drive Files": {
+      "main": [
+        [
+          {
+            "node": "Process Backup Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Backup Data": {
+      "main": [
+        [
+          {
+            "node": "Upload Sheets Backup",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Create Backup Manifest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Sheets Backup": {
+      "main": [
+        [
+          {
+            "node": "Log Backup History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Backup Manifest": {
+      "main": [
+        []
+      ]
+    },
+    "Create Backup Manifest": {
+      "main": [
+        [
+          {
+            "node": "Upload Backup Manifest",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Backup History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Backup History": {
+      "main": [
+        [
+          {
+            "node": "Check Backup Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Backup Success": {
+      "main": [
+        [
+          {
+            "node": "Success Notification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Failure Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Monthly Cleanup Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Backup History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Backup History": {
+      "main": [
+        [
+          {
+            "node": "Generate Monthly Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Monthly Report": {
+      "main": [
+        [
+          {
+            "node": "Monthly Report Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "12345"
+  },
+  "id": "data-backup-automation",
+  "tags": []
+}

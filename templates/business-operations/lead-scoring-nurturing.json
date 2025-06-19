@@ -1,0 +1,779 @@
+{
+  "name": "Lead Scoring and Nurturing",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-capture",
+        "options": {}
+      },
+      "id": "1a2b3c4d-5e6f-7g8h-9i0j-k1l2m3n4o5p6",
+      "name": "Lead Capture Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "lead-capture-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse and validate lead data\nconst payload = $json.body;\n\n// Extract lead information\nconst leadData = {\n  id: payload.id || `lead_${Date.now()}`,\n  email: payload.email || '',\n  firstName: payload.firstName || payload.first_name || '',\n  lastName: payload.lastName || payload.last_name || '',\n  company: payload.company || '',\n  jobTitle: payload.jobTitle || payload.job_title || '',\n  phone: payload.phone || '',\n  website: payload.website || '',\n  industry: payload.industry || '',\n  companySize: payload.companySize || payload.company_size || '',\n  source: payload.source || 'website',\n  campaign: payload.campaign || '',\n  interests: payload.interests || [],\n  budget: payload.budget || '',\n  timeline: payload.timeline || '',\n  notes: payload.notes || payload.message || '',\n  ipAddress: payload.ipAddress || $json.headers['x-forwarded-for'] || '',\n  userAgent: payload.userAgent || $json.headers['user-agent'] || '',\n  referrer: payload.referrer || '',\n  utmSource: payload.utm_source || '',\n  utmMedium: payload.utm_medium || '',\n  utmCampaign: payload.utm_campaign || '',\n  utmContent: payload.utm_content || '',\n  utmTerm: payload.utm_term || '',\n  createdAt: new Date().toISOString()\n};\n\n// Validate required fields\nconst isValid = leadData.email && leadData.email.includes('@');\n\n// Generate full name\nleadData.fullName = `${leadData.firstName} ${leadData.lastName}`.trim() || 'Unknown';\n\n// Determine lead source category\nconst sourceCategories = {\n  'google': 'Search Engine',\n  'facebook': 'Social Media',\n  'linkedin': 'Social Media',\n  'twitter': 'Social Media',\n  'email': 'Email Marketing',\n  'direct': 'Direct Traffic',\n  'referral': 'Referral',\n  'organic': 'Organic Search',\n  'paid': 'Paid Advertising'\n};\n\nleadData.sourceCategory = sourceCategories[leadData.utmSource?.toLowerCase()] || \n                         sourceCategories[leadData.source?.toLowerCase()] || \n                         'Other';\n\nreturn {\n  json: {\n    ...leadData,\n    isValid,\n    leadId: leadData.id\n  }\n};"
+      },
+      "id": "2b3c4d5e-6f7g-8h9i-0j1k-l2m3n4o5p6q7",
+      "name": "Parse Lead Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.isValid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combineOperation": "all"
+        },
+        "options": {}
+      },
+      "id": "3c4d5e6f-7g8h-9i0j-1k2l-m3n4o5p6q7r8",
+      "name": "Is Valid Lead?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.clearbit.com/v2/people/find",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "email",
+              "value": "={{ $json.email }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_CLEARBIT_API_KEY"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4d5e6f7g-8h9i-0j1k-2l3m-n4o5p6q7r8s9",
+      "name": "Enrich Lead Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate lead score based on various factors\nconst leadData = $('Parse Lead Data').item.json;\nconst enrichmentData = $json;\n\n// Initialize scoring\nlet score = 0;\nlet scoringFactors = [];\n\n// Demographic scoring\nif (leadData.jobTitle) {\n  const seniorTitles = ['ceo', 'cto', 'cfo', 'vp', 'director', 'manager', 'head'];\n  const title = leadData.jobTitle.toLowerCase();\n  if (seniorTitles.some(t => title.includes(t))) {\n    score += 20;\n    scoringFactors.push('Senior job title (+20)');\n  } else {\n    score += 10;\n    scoringFactors.push('Job title provided (+10)');\n  }\n}\n\n// Company information scoring\nif (leadData.company) {\n  score += 15;\n  scoringFactors.push('Company provided (+15)');\n}\n\n// Company size scoring\nif (leadData.companySize) {\n  const sizeScoring = {\n    '1-10': 5,\n    '11-50': 10,\n    '51-200': 15,\n    '201-1000': 20,\n    '1000+': 25\n  };\n  const sizeScore = sizeScoring[leadData.companySize] || 5;\n  score += sizeScore;\n  scoringFactors.push(`Company size: ${leadData.companySize} (+${sizeScore})`);\n}\n\n// Budget scoring\nif (leadData.budget) {\n  const budgetScoring = {\n    'under-1k': 5,\n    '1k-5k': 10,\n    '5k-10k': 15,\n    '10k-25k': 20,\n    '25k+': 25\n  };\n  const budgetScore = budgetScoring[leadData.budget] || 10;\n  score += budgetScore;\n  scoringFactors.push(`Budget: ${leadData.budget} (+${budgetScore})`);\n}\n\n// Timeline scoring\nif (leadData.timeline) {\n  const timelineScoring = {\n    'immediate': 25,\n    '1-3-months': 20,\n    '3-6-months': 15,\n    '6-12-months': 10,\n    'no-timeline': 5\n  };\n  const timelineScore = timelineScoring[leadData.timeline] || 10;\n  score += timelineScore;\n  scoringFactors.push(`Timeline: ${leadData.timeline} (+${timelineScore})`);\n}\n\n// Source scoring\nconst sourceScoring = {\n  'Search Engine': 15,\n  'Social Media': 10,\n  'Email Marketing': 12,\n  'Direct Traffic': 20,\n  'Referral': 18,\n  'Organic Search': 15,\n  'Paid Advertising': 8\n};\nconst sourceScore = sourceScoring[leadData.sourceCategory] || 5;\nscore += sourceScore;\nscoringFactors.push(`Source: ${leadData.sourceCategory} (+${sourceScore})`);\n\n// Contact information completeness\nlet contactScore = 0;\nif (leadData.phone) contactScore += 5;\nif (leadData.website) contactScore += 5;\nif (leadData.firstName && leadData.lastName) contactScore += 5;\nif (contactScore > 0) {\n  score += contactScore;\n  scoringFactors.push(`Contact completeness (+${contactScore})`);\n}\n\n// Enrichment data scoring\nif (enrichmentData && enrichmentData.statusCode === 200) {\n  score += 10;\n  scoringFactors.push('Data enrichment successful (+10)');\n  \n  // Additional scoring based on enriched data\n  if (enrichmentData.person?.employment?.seniority === 'executive') {\n    score += 15;\n    scoringFactors.push('Executive level (+15)');\n  }\n  \n  if (enrichmentData.company?.metrics?.employees > 100) {\n    score += 10;\n    scoringFactors.push('Large company (+10)');\n  }\n}\n\n// Determine lead grade\nlet grade, priority, status;\nif (score >= 80) {\n  grade = 'A';\n  priority = 'Hot';\n  status = 'Sales Qualified';\n} else if (score >= 60) {\n  grade = 'B';\n  priority = 'Warm';\n  status = 'Marketing Qualified';\n} else if (score >= 40) {\n  grade = 'C';\n  priority = 'Cold';\n  status = 'Lead';\n} else {\n  grade = 'D';\n  priority = 'Very Cold';\n  status = 'Subscriber';\n}\n\n// Merge enriched data\nconst enrichedLead = {\n  ...leadData,\n  score,\n  grade,\n  priority,\n  status,\n  scoringFactors,\n  enrichmentData: enrichmentData?.statusCode === 200 ? {\n    person: enrichmentData.person,\n    company: enrichmentData.company\n  } : null,\n  scoredAt: new Date().toISOString()\n};\n\n// Update company info from enrichment if available\nif (enrichmentData?.company) {\n  enrichedLead.company = enrichedLead.company || enrichmentData.company.name;\n  enrichedLead.industry = enrichedLead.industry || enrichmentData.company.category?.industry;\n  enrichedLead.website = enrichedLead.website || enrichmentData.company.domain;\n}\n\nreturn { json: enrichedLead };"
+      },
+      "id": "5e6f7g8h-9i0j-1k2l-3m4n-o5p6q7r8s9t0",
+      "name": "Calculate Lead Score",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "your-leads-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Leads"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "leadId": "={{ $json.leadId }}",
+            "email": "={{ $json.email }}",
+            "fullName": "={{ $json.fullName }}",
+            "firstName": "={{ $json.firstName }}",
+            "lastName": "={{ $json.lastName }}",
+            "company": "={{ $json.company }}",
+            "jobTitle": "={{ $json.jobTitle }}",
+            "phone": "={{ $json.phone }}",
+            "website": "={{ $json.website }}",
+            "industry": "={{ $json.industry }}",
+            "companySize": "={{ $json.companySize }}",
+            "budget": "={{ $json.budget }}",
+            "timeline": "={{ $json.timeline }}",
+            "source": "={{ $json.source }}",
+            "sourceCategory": "={{ $json.sourceCategory }}",
+            "campaign": "={{ $json.campaign }}",
+            "score": "={{ $json.score }}",
+            "grade": "={{ $json.grade }}",
+            "priority": "={{ $json.priority }}",
+            "status": "={{ $json.status }}",
+            "notes": "={{ $json.notes }}",
+            "createdAt": "={{ $json.createdAt }}",
+            "scoredAt": "={{ $json.scoredAt }}",
+            "utmSource": "={{ $json.utmSource }}",
+            "utmMedium": "={{ $json.utmMedium }}",
+            "utmCampaign": "={{ $json.utmCampaign }}"
+          },
+          "matchingColumns": [
+            "email"
+          ],
+          "schema": [
+            {
+              "id": "leadId",
+              "displayName": "leadId",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fullName",
+              "displayName": "fullName",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "firstName",
+              "displayName": "firstName",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "lastName",
+              "displayName": "lastName",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "company",
+              "displayName": "company",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "jobTitle",
+              "displayName": "jobTitle",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "website",
+              "displayName": "website",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "industry",
+              "displayName": "industry",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "companySize",
+              "displayName": "companySize",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "budget",
+              "displayName": "budget",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "timeline",
+              "displayName": "timeline",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "sourceCategory",
+              "displayName": "sourceCategory",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "campaign",
+              "displayName": "campaign",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "score",
+              "displayName": "score",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "grade",
+              "displayName": "grade",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "priority",
+              "displayName": "priority",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "notes",
+              "displayName": "notes",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "createdAt",
+              "displayName": "createdAt",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "scoredAt",
+              "displayName": "scoredAt",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "utmSource",
+              "displayName": "utmSource",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "utmMedium",
+              "displayName": "utmMedium",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "utmCampaign",
+              "displayName": "utmCampaign",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6f7g8h9i-0j1k-2l3m-4n5o-p6q7r8s9t0u1",
+      "name": "Save Lead",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1340, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "operation": "create",
+        "model": {
+          "__rl": true,
+          "value": "gpt-4",
+          "mode": "list"
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a marketing automation specialist. Create a personalized welcome email for a new lead based on their information and lead score. The email should be professional, engaging, and tailored to their specific needs and interests. Include relevant next steps based on their lead grade."
+            },
+            {
+              "role": "user",
+              "content": "Create a welcome email for:\n\nName: {{ $json.fullName }}\nCompany: {{ $json.company }}\nJob Title: {{ $json.jobTitle }}\nIndustry: {{ $json.industry }}\nBudget: {{ $json.budget }}\nTimeline: {{ $json.timeline }}\nSource: {{ $json.sourceCategory }}\nLead Grade: {{ $json.grade }}\nPriority: {{ $json.priority }}\nScore: {{ $json.score }}\nNotes: {{ $json.notes }}\n\nMake it personalized and include appropriate next steps based on their lead grade."
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.7,
+          "maxTokens": 1000
+        }
+      },
+      "id": "7g8h9i0j-1k2l-3m4n-5o6p-q7r8s9t0u1v2",
+      "name": "Generate Welcome Email",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [1560, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "message": {
+          "to": "={{ $json.email }}",
+          "subject": "Welcome {{ $json.firstName }}! Let's explore how we can help {{ $json.company || 'your business' }}",
+          "body": "={{ $('Generate Welcome Email').item.json.choices[0].message.content }}",
+          "options": {
+            "bodyType": "html"
+          }
+        },
+        "options": {}
+      },
+      "id": "8h9i0j1k-2l3m-4n5o-6p7q-r8s9t0u1v2w3",
+      "name": "Send Welcome Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [1780, 300],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-oauth-credential",
+          "name": "Gmail OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.grade }}",
+              "rightValue": "A",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combineOperation": "any"
+        },
+        "options": {}
+      },
+      "id": "9i0j1k2l-3m4n-5o6p-7q8r-s9t0u1v2w3x4",
+      "name": "High Quality Lead?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2000, 200]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "your-sales-team-chat-id",
+        "text": "🔥 **HIGH QUALITY LEAD ALERT**\n\n**Name:** {{ $json.fullName }}\n**Company:** {{ $json.company }}\n**Job Title:** {{ $json.jobTitle }}\n**Email:** {{ $json.email }}\n**Phone:** {{ $json.phone || 'Not provided' }}\n\n**Lead Score:** {{ $json.score }} (Grade {{ $json.grade }})\n**Priority:** {{ $json.priority }}\n**Budget:** {{ $json.budget || 'Not specified' }}\n**Timeline:** {{ $json.timeline || 'Not specified' }}\n**Source:** {{ $json.sourceCategory }}\n\n**Scoring Factors:**\n{{ $json.scoringFactors.map(factor => '• ' + factor).join('\\n') }}\n\n**Notes:** {{ $json.notes || 'None' }}\n\n[📊 View Lead Dashboard](https://docs.google.com/spreadsheets/d/your-leads-sheet-id)\n\n**Action Required:** Contact within 1 hour for best conversion rates!",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "0j1k2l3m-4n5o-6p7q-8r9s-t0u1v2w3x4y5",
+      "name": "Alert Sales Team",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [2220, 200],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot-credential",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "your-marketing-team-chat-id",
+        "text": "📈 **New Lead Captured**\n\n**Name:** {{ $json.fullName }}\n**Company:** {{ $json.company }}\n**Score:** {{ $json.score }} (Grade {{ $json.grade }})\n**Priority:** {{ $json.priority }}\n**Source:** {{ $json.sourceCategory }}\n**Campaign:** {{ $json.campaign || 'Direct' }}\n\n[📊 View Dashboard](https://docs.google.com/spreadsheets/d/your-leads-sheet-id)",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "1k2l3m4n-5o6p-7q8r-9s0t-u1v2w3x4y5z6",
+      "name": "Notify Marketing",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [2000, 400],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot-credential",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 10 * * *"
+            }
+          ]
+        }
+      },
+      "id": "2l3m4n5o-6p7q-8r9s-0t1u-v2w3x4y5z6a7",
+      "name": "Daily Nurture Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 600]
+    },
+    {
+      "parameters": {
+        "operation": "readOrSearch",
+        "documentId": {
+          "__rl": true,
+          "value": "your-leads-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Leads"
+        },
+        "options": {
+          "where": {
+            "values": [
+              {
+                "column": "status",
+                "condition": "equal",
+                "value": "Marketing Qualified"
+              },
+              {
+                "column": "createdAt",
+                "condition": "dateAfter",
+                "value": "={{ new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString() }}"
+              }
+            ],
+            "combineOperation": "all"
+          }
+        }
+      },
+      "id": "3m4n5o6p-7q8r-9s0t-1u2v-w3x4y5z6a7b8",
+      "name": "Get Nurture Leads",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [460, 600],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "operation": "create",
+        "model": {
+          "__rl": true,
+          "value": "gpt-4",
+          "mode": "list"
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a marketing automation specialist. Create a nurturing email for a marketing qualified lead. The email should provide value, build trust, and gently guide them towards a sales conversation. Include relevant industry insights, case studies, or resources based on their profile."
+            },
+            {
+              "role": "user",
+              "content": "Create a nurturing email for:\n\nName: {{ $json.fullName }}\nCompany: {{ $json.company }}\nJob Title: {{ $json.jobTitle }}\nIndustry: {{ $json.industry }}\nBudget: {{ $json.budget }}\nTimeline: {{ $json.timeline }}\nDays since signup: {{ Math.floor((Date.now() - new Date($json.createdAt).getTime()) / (1000 * 60 * 60 * 24)) }}\n\nFocus on providing value and building trust. Include a soft call-to-action."
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.7,
+          "maxTokens": 1000
+        }
+      },
+      "id": "4n5o6p7q-8r9s-0t1u-2v3w-x4y5z6a7b8c9",
+      "name": "Generate Nurture Email",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [680, 600],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "message": {
+          "to": "={{ $json.email }}",
+          "subject": "{{ $json.firstName }}, here's something that might interest you...",
+          "body": "={{ $('Generate Nurture Email').item.json.choices[0].message.content }}",
+          "options": {
+            "bodyType": "html"
+          }
+        },
+        "options": {}
+      },
+      "id": "5o6p7q8r-9s0t-1u2v-3w4x-y5z6a7b8c9d0",
+      "name": "Send Nurture Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [900, 600],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-oauth-credential",
+          "name": "Gmail OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"status\": \"success\",\n  \"leadId\": \"{{ $json.leadId }}\",\n  \"score\": {{ $json.score }},\n  \"grade\": \"{{ $json.grade }}\",\n  \"priority\": \"{{ $json.priority }}\",\n  \"status\": \"{{ $json.status }}\",\n  \"message\": \"Lead processed successfully\"\n}",
+        "options": {}
+      },
+      "id": "6p7q8r9s-0t1u-2v3w-4x5y-z6a7b8c9d0e1",
+      "name": "Return Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2220, 400]
+    }
+  ],
+  "connections": {
+    "Lead Capture Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Lead Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Lead Data": {
+      "main": [
+        [
+          {
+            "node": "Is Valid Lead?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Valid Lead?": {
+      "main": [
+        [
+          {
+            "node": "Enrich Lead Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enrich Lead Data": {
+      "main": [
+        [
+          {
+            "node": "Calculate Lead Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Lead Score": {
+      "main": [
+        [
+          {
+            "node": "Save Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Lead": {
+      "main": [
+        [
+          {
+            "node": "Generate Welcome Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Welcome Email": {
+      "main": [
+        [
+          {
+            "node": "Send Welcome Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Welcome Email": {
+      "main": [
+        [
+          {
+            "node": "High Quality Lead?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify Marketing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "High Quality Lead?": {
+      "main": [
+        [
+          {
+            "node": "Alert Sales Team",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Marketing": {
+      "main": [
+        [
+          {
+            "node": "Return Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily Nurture Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Nurture Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Nurture Leads": {
+      "main": [
+        [
+          {
+            "node": "Generate Nurture Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Nurture Email": {
+      "main": [
+        [
+          {
+            "node": "Send Nurture Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-12-19T10:00:00.000Z",
+      "updatedAt": "2024-12-19T10:00:00.000Z",
+      "id": "business-operations",
+      "name": "Business Operations"
+    }
+  ],
+  "triggerCount": 2,
+  "updatedAt": "2024-12-19T10:00:00.000Z",
+  "versionId": "1"
+}

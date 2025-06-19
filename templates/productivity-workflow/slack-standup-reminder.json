@@ -1,0 +1,343 @@
+{
+  "name": "Slack Standup Reminder",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "1a2b3c4d-5e6f-7g8h-9i0j-k1l2m3n4o5p6",
+      "name": "Daily Standup Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get team members and their timezones\nconst teamMembers = [\n  { name: 'Alice', slackId: 'U123456', timezone: 'America/New_York' },\n  { name: 'Bob', slackId: 'U234567', timezone: 'Europe/London' },\n  { name: 'Charlie', slackId: 'U345678', timezone: 'Asia/Tokyo' }\n];\n\nconst today = new Date();\nconst dayOfWeek = today.toLocaleDateString('en-US', { weekday: 'long' });\nconst date = today.toLocaleDateString('en-US', { \n  year: 'numeric', \n  month: 'long', \n  day: 'numeric' \n});\n\n// Generate standup questions\nconst questions = [\n  '🎯 What did you accomplish yesterday?',\n  '📋 What are you working on today?',\n  '🚧 Any blockers or challenges?',\n  '🤝 Do you need help with anything?'\n];\n\nconst standupMessage = `Good morning team! 🌅\n\n**${dayOfWeek} Standup - ${date}**\n\nTime for our daily standup! Please share:\n\n${questions.join('\\n')}\n\n*Please respond in this thread within the next hour.*\n\n${teamMembers.map(member => `<@${member.slackId}>`).join(' ')}`;\n\nreturn {\n  json: {\n    message: standupMessage,\n    teamMembers: teamMembers,\n    date: date,\n    dayOfWeek: dayOfWeek\n  }\n};"
+      },
+      "id": "2b3c4d5e-6f7g-8h9i-0j1k-l2m3n4o5p6q7",
+      "name": "Generate Standup Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#daily-standup",
+        "text": "={{ $json.message }}",
+        "otherOptions": {
+          "thread_ts": ""
+        }
+      },
+      "id": "3c4d5e6f-7g8h-9i0j-1k2l-m3n4o5p6q7r8",
+      "name": "Post Standup Message",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [680, 300],
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "slack-oauth-credential",
+          "name": "Slack OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "4d5e6f7g-8h9i-0j1k-2l3m-n4o5p6q7r8s9",
+      "name": "Follow-up Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "getAll",
+        "channel": "#daily-standup",
+        "filters": {
+          "oldest": "={{ Math.floor((Date.now() - 2 * 60 * 60 * 1000) / 1000) }}"
+        },
+        "options": {
+          "limit": 50
+        }
+      },
+      "id": "5e6f7g8h-9i0j-1k2l-3m4n-o5p6q7r8s9t0",
+      "name": "Check Recent Messages",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [1120, 300],
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "slack-oauth-credential",
+          "name": "Slack OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check who hasn't responded to standup\nconst messages = $input.all();\nconst teamMembers = [\n  { name: 'Alice', slackId: 'U123456' },\n  { name: 'Bob', slackId: 'U234567' },\n  { name: 'Charlie', slackId: 'U345678' }\n];\n\n// Find standup message from bot\nconst standupMessage = messages.find(msg => \n  msg.json.text && msg.json.text.includes('Time for our daily standup')\n);\n\nif (!standupMessage) {\n  return { json: { noStandupFound: true } };\n}\n\n// Get thread replies\nconst threadReplies = messages.filter(msg => \n  msg.json.thread_ts === standupMessage.json.ts\n);\n\n// Check who responded\nconst respondedUsers = threadReplies.map(msg => msg.json.user);\nconst missingUsers = teamMembers.filter(member => \n  !respondedUsers.includes(member.slackId)\n);\n\nif (missingUsers.length === 0) {\n  return { json: { allResponded: true } };\n}\n\nconst reminderMessage = `👋 Friendly reminder!\n\nThe following team members haven't shared their standup update yet:\n\n${missingUsers.map(user => `• <@${user.slackId}>`).join('\\n')}\n\nPlease share your update when you have a moment! 🙏`;\n\nreturn {\n  json: {\n    needsReminder: true,\n    missingUsers: missingUsers,\n    reminderMessage: reminderMessage,\n    threadTs: standupMessage.json.ts\n  }\n};"
+      },
+      "id": "6f7g8h9i-0j1k-2l3m-4n5o-p6q7r8s9t0u1",
+      "name": "Check Missing Responses",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.needsReminder }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combineOperation": "all"
+        },
+        "options": {}
+      },
+      "id": "7g8h9i0j-1k2l-3m4n-5o6p-q7r8s9t0u1v2",
+      "name": "Need Reminder?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#daily-standup",
+        "text": "={{ $json.reminderMessage }}",
+        "otherOptions": {
+          "thread_ts": "={{ $json.threadTs }}"
+        }
+      },
+      "id": "8h9i0j1k-2l3m-4n5o-6p7q-r8s9t0u1v2w3",
+      "name": "Send Reminder",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [1780, 300],
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "slack-oauth-credential",
+          "name": "Slack OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "9i0j1k2l-3m4n-5o6p-7q8r-s9t0u1v2w3x4",
+      "name": "Weekly Summary Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 600]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "getAll",
+        "channel": "#daily-standup",
+        "filters": {
+          "oldest": "={{ Math.floor((Date.now() - 7 * 24 * 60 * 60 * 1000) / 1000) }}"
+        },
+        "options": {
+          "limit": 200
+        }
+      },
+      "id": "0j1k2l3m-4n5o-6p7q-8r9s-t0u1v2w3x4y5",
+      "name": "Get Week Messages",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [460, 600],
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "slack-oauth-credential",
+          "name": "Slack OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate weekly standup summary\nconst messages = $input.all();\nconst teamMembers = [\n  { name: 'Alice', slackId: 'U123456' },\n  { name: 'Bob', slackId: 'U234567' },\n  { name: 'Charlie', slackId: 'U345678' }\n];\n\n// Filter standup messages and responses\nconst standupMessages = messages.filter(msg => \n  msg.json.text && msg.json.text.includes('Time for our daily standup')\n);\n\nconst responses = messages.filter(msg => \n  msg.json.thread_ts && standupMessages.some(standup => standup.json.ts === msg.json.thread_ts)\n);\n\n// Calculate participation\nconst participationStats = {};\nteamMembers.forEach(member => {\n  const userResponses = responses.filter(msg => msg.json.user === member.slackId);\n  participationStats[member.name] = {\n    responses: userResponses.length,\n    percentage: Math.round((userResponses.length / standupMessages.length) * 100)\n  };\n});\n\n// Generate summary\nconst weekStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toLocaleDateString();\nconst weekEnd = new Date().toLocaleDateString();\n\nconst summary = `📊 **Weekly Standup Summary** (${weekStart} - ${weekEnd})\n\n` +\n  `**Participation Stats:**\n` +\n  Object.entries(participationStats).map(([name, stats]) => \n    `• ${name}: ${stats.responses}/${standupMessages.length} days (${stats.percentage}%)`\n  ).join('\\n') +\n  `\n\n**Total Standups:** ${standupMessages.length}\n` +\n  `**Total Responses:** ${responses.length}\n\n` +\n  `Great work this week, team! 🎉`;\n\nreturn {\n  json: {\n    summary: summary,\n    stats: participationStats,\n    totalStandups: standupMessages.length,\n    totalResponses: responses.length\n  }\n};"
+      },
+      "id": "1k2l3m4n-5o6p-7q8r-9s0t-u1v2w3x4y5z6",
+      "name": "Generate Weekly Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 600]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#daily-standup",
+        "text": "={{ $json.summary }}",
+        "otherOptions": {}
+      },
+      "id": "2l3m4n5o-6p7q-8r9s-0t1u-v2w3x4y5z6a7",
+      "name": "Post Weekly Summary",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [900, 600],
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "slack-oauth-credential",
+          "name": "Slack OAuth2"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily Standup Trigger": {
+      "main": [
+        [
+          {
+            "node": "Generate Standup Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Standup Message": {
+      "main": [
+        [
+          {
+            "node": "Post Standup Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Follow-up Trigger": {
+      "main": [
+        [
+          {
+            "node": "Check Recent Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Recent Messages": {
+      "main": [
+        [
+          {
+            "node": "Check Missing Responses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Missing Responses": {
+      "main": [
+        [
+          {
+            "node": "Need Reminder?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Need Reminder?": {
+      "main": [
+        [
+          {
+            "node": "Send Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Weekly Summary Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Week Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Week Messages": {
+      "main": [
+        [
+          {
+            "node": "Generate Weekly Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Weekly Summary": {
+      "main": [
+        [
+          {
+            "node": "Post Weekly Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-12-19T10:00:00.000Z",
+      "updatedAt": "2024-12-19T10:00:00.000Z",
+      "id": "productivity-workflow",
+      "name": "Productivity & Workflow"
+    }
+  ],
+  "triggerCount": 3,
+  "updatedAt": "2024-12-19T10:00:00.000Z",
+  "versionId": "1"
+}

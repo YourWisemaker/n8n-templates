@@ -1,0 +1,661 @@
+{
+  "name": "API Monitoring and Alerting",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/5 * * * *"
+            }
+          ]
+        }
+      },
+      "id": "1a2b3c4d-5e6f-7g8h-9i0j-k1l2m3n4o5p6",
+      "name": "API Health Check Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Define APIs to monitor\nconst apisToMonitor = [\n  {\n    name: 'Main API',\n    url: 'https://api.yourapp.com/health',\n    method: 'GET',\n    expectedStatus: 200,\n    timeout: 10000,\n    headers: {\n      'Authorization': 'Bearer YOUR_API_TOKEN',\n      'Content-Type': 'application/json'\n    },\n    expectedResponse: {\n      status: 'healthy'\n    },\n    critical: true\n  },\n  {\n    name: 'User API',\n    url: 'https://api.yourapp.com/users/me',\n    method: 'GET',\n    expectedStatus: 200,\n    timeout: 10000,\n    headers: {\n      'Authorization': 'Bearer YOUR_API_TOKEN'\n    },\n    critical: true\n  },\n  {\n    name: 'Payment API',\n    url: 'https://api.yourapp.com/payments/status',\n    method: 'GET',\n    expectedStatus: 200,\n    timeout: 15000,\n    headers: {\n      'Authorization': 'Bearer YOUR_API_TOKEN'\n    },\n    critical: true\n  },\n  {\n    name: 'Analytics API',\n    url: 'https://api.yourapp.com/analytics/ping',\n    method: 'GET',\n    expectedStatus: 200,\n    timeout: 10000,\n    headers: {\n      'Authorization': 'Bearer YOUR_API_TOKEN'\n    },\n    critical: false\n  },\n  {\n    name: 'External Service',\n    url: 'https://external-api.service.com/status',\n    method: 'GET',\n    expectedStatus: 200,\n    timeout: 20000,\n    critical: false\n  }\n];\n\nreturn apisToMonitor.map(api => ({\n  json: {\n    ...api,\n    checkId: `${api.name.toLowerCase().replace(/\\s+/g, '-')}-${Date.now()}`,\n    timestamp: new Date().toISOString()\n  }\n}));"
+      },
+      "id": "2b3c4d5e-6f7g-8h9i-0j1k-l2m3n4o5p6q7",
+      "name": "Define APIs to Monitor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": "={{ Object.entries($json.headers || {}).map(([key, value]) => ({ name: key, value })) }}"
+        },
+        "options": {
+          "timeout": "={{ $json.timeout || 10000 }}",
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json",
+              "outputPropertyName": "response"
+            }
+          }
+        }
+      },
+      "id": "3c4d5e6f-7g8h-9i0j-1k2l-m3n4o5p6q7r8",
+      "name": "Check API Health",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process API health check results\nconst apiConfig = $json;\nconst response = $json.response;\nconst startTime = new Date(apiConfig.timestamp);\nconst endTime = new Date();\nconst responseTime = endTime.getTime() - startTime.getTime();\n\n// Determine health status\nlet status = 'healthy';\nlet issues = [];\nlet severity = 'info';\n\n// Check if request failed\nif (!response || response.error) {\n  status = 'down';\n  issues.push('API request failed');\n  severity = apiConfig.critical ? 'critical' : 'warning';\n}\n\n// Check status code\nelse if (response.statusCode !== apiConfig.expectedStatus) {\n  status = 'unhealthy';\n  issues.push(`Unexpected status code: ${response.statusCode} (expected: ${apiConfig.expectedStatus})`);\n  severity = response.statusCode >= 500 ? 'critical' : 'warning';\n}\n\n// Check response time\nelse if (responseTime > (apiConfig.timeout * 0.8)) {\n  status = 'slow';\n  issues.push(`Slow response time: ${responseTime}ms (timeout: ${apiConfig.timeout}ms)`);\n  severity = 'warning';\n}\n\n// Check expected response content\nelse if (apiConfig.expectedResponse && response.body) {\n  try {\n    const responseBody = typeof response.body === 'string' ? JSON.parse(response.body) : response.body;\n    \n    for (const [key, expectedValue] of Object.entries(apiConfig.expectedResponse)) {\n      if (responseBody[key] !== expectedValue) {\n        status = 'unhealthy';\n        issues.push(`Unexpected response content: ${key} = ${responseBody[key]} (expected: ${expectedValue})`);\n        severity = 'warning';\n        break;\n      }\n    }\n  } catch (error) {\n    status = 'unhealthy';\n    issues.push('Invalid JSON response');\n    severity = 'warning';\n  }\n}\n\n// Determine overall health\nif (status === 'healthy' && responseTime < (apiConfig.timeout * 0.5)) {\n  severity = 'info';\n} else if (status === 'healthy' && responseTime < (apiConfig.timeout * 0.8)) {\n  severity = 'info';\n}\n\nconst result = {\n  checkId: apiConfig.checkId,\n  apiName: apiConfig.name,\n  url: apiConfig.url,\n  method: apiConfig.method,\n  status,\n  severity,\n  responseTime,\n  statusCode: response?.statusCode || null,\n  issues,\n  critical: apiConfig.critical,\n  timestamp: apiConfig.timestamp,\n  checkedAt: endTime.toISOString(),\n  responseBody: response?.body ? (typeof response.body === 'string' ? response.body.substring(0, 500) : JSON.stringify(response.body).substring(0, 500)) : null,\n  error: response?.error || null\n};\n\nreturn { json: result };"
+      },
+      "id": "4d5e6f7g-8h9i-0j1k-2l3m-n4o5p6q7r8s9",
+      "name": "Process Health Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "your-api-monitoring-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "API Health Logs"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "checkId": "={{ $json.checkId }}",
+            "apiName": "={{ $json.apiName }}",
+            "url": "={{ $json.url }}",
+            "status": "={{ $json.status }}",
+            "severity": "={{ $json.severity }}",
+            "responseTime": "={{ $json.responseTime }}",
+            "statusCode": "={{ $json.statusCode }}",
+            "issues": "={{ $json.issues.join('; ') }}",
+            "critical": "={{ $json.critical }}",
+            "timestamp": "={{ $json.timestamp }}",
+            "checkedAt": "={{ $json.checkedAt }}",
+            "error": "={{ $json.error }}"
+          },
+          "matchingColumns": [
+            "checkId"
+          ],
+          "schema": [
+            {
+              "id": "checkId",
+              "displayName": "checkId",
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "apiName",
+              "displayName": "apiName",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "url",
+              "displayName": "url",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "severity",
+              "displayName": "severity",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "responseTime",
+              "displayName": "responseTime",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "statusCode",
+              "displayName": "statusCode",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "issues",
+              "displayName": "issues",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "critical",
+              "displayName": "critical",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "checkedAt",
+              "displayName": "checkedAt",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "error",
+              "displayName": "error",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "5e6f7g8h-9i0j-1k2l-3m4n-o5p6q7r8s9t0",
+      "name": "Log to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1120, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "healthy",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combineOperation": "any"
+        },
+        "options": {}
+      },
+      "id": "6f7g8h9i-0j1k-2l3m-4n5o-p6q7r8s9t0u1",
+      "name": "Has Issues?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.severity }}",
+              "rightValue": "critical",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combineOperation": "any"
+        },
+        "options": {}
+      },
+      "id": "7g8h9i0j-1k2l-3m4n-5o6p-q7r8s9t0u1v2",
+      "name": "Is Critical?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1560, 200]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "your-devops-team-chat-id",
+        "text": "🚨 **CRITICAL API ALERT** 🚨\n\n**API:** {{ $json.apiName }}\n**Status:** {{ $json.status.toUpperCase() }}\n**URL:** {{ $json.url }}\n**Response Time:** {{ $json.responseTime }}ms\n**Status Code:** {{ $json.statusCode || 'N/A' }}\n\n**Issues:**\n{{ $json.issues.map(issue => '• ' + issue).join('\\n') }}\n\n**Error:** {{ $json.error || 'None' }}\n\n**Time:** {{ $json.checkedAt }}\n\n[📊 View Dashboard](https://docs.google.com/spreadsheets/d/your-api-monitoring-sheet-id)\n\n**Action Required:** Immediate investigation needed!",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "8h9i0j1k-2l3m-4n5o-6p7q-r8s9t0u1v2w3",
+      "name": "Critical Alert - Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1780, 100],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot-credential",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "postToChannel",
+        "channel": "#alerts",
+        "text": ":rotating_light: **CRITICAL API ALERT** :rotating_light:\n\n*API:* {{ $json.apiName }}\n*Status:* {{ $json.status.toUpperCase() }}\n*URL:* {{ $json.url }}\n*Response Time:* {{ $json.responseTime }}ms\n*Status Code:* {{ $json.statusCode || 'N/A' }}\n\n*Issues:*\n{{ $json.issues.map(issue => '• ' + issue).join('\\n') }}\n\n*Error:* {{ $json.error || 'None' }}\n*Time:* {{ $json.checkedAt }}\n\n<https://docs.google.com/spreadsheets/d/your-api-monitoring-sheet-id|View Dashboard>\n\n*Action Required:* Immediate investigation needed!",
+        "otherOptions": {}
+      },
+      "id": "9i0j1k2l-3m4n-5o6p-7q8r-s9t0u1v2w3x4",
+      "name": "Critical Alert - Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.1,
+      "position": [1780, 200],
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "slack-oauth-credential",
+          "name": "Slack OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "your-monitoring-chat-id",
+        "text": "⚠️ **API Warning**\n\n**API:** {{ $json.apiName }}\n**Status:** {{ $json.status }}\n**Response Time:** {{ $json.responseTime }}ms\n**Issues:** {{ $json.issues.join(', ') }}\n**Time:** {{ $json.checkedAt }}\n\n[📊 Dashboard](https://docs.google.com/spreadsheets/d/your-api-monitoring-sheet-id)",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "0j1k2l3m-4n5o-6p7q-8r9s-t0u1v2w3x4y5",
+      "name": "Warning Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1560, 400],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot-credential",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "1k2l3m4n-5o6p-7q8r-9s0t-u1v2w3x4y5z6",
+      "name": "Daily Report Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 700]
+    },
+    {
+      "parameters": {
+        "operation": "readOrSearch",
+        "documentId": {
+          "__rl": true,
+          "value": "your-api-monitoring-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "API Health Logs"
+        },
+        "options": {
+          "where": {
+            "values": [
+              {
+                "column": "checkedAt",
+                "condition": "dateAfter",
+                "value": "={{ new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "2l3m4n5o-6p7q-8r9s-0t1u-v2w3x4y5z6a7",
+      "name": "Get 24h Data",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [460, 700],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate daily API monitoring report\nconst data = $input.all();\n\nif (!data || data.length === 0) {\n  return [{\n    json: {\n      report: 'No monitoring data available for the last 24 hours.',\n      summary: {\n        totalChecks: 0,\n        healthyChecks: 0,\n        unhealthyChecks: 0,\n        downChecks: 0,\n        averageResponseTime: 0\n      }\n    }\n  }];\n}\n\n// Group data by API\nconst apiGroups = {};\ndata.forEach(item => {\n  const apiName = item.json.apiName;\n  if (!apiGroups[apiName]) {\n    apiGroups[apiName] = [];\n  }\n  apiGroups[apiName].push(item.json);\n});\n\n// Calculate statistics\nlet totalChecks = data.length;\nlet healthyChecks = data.filter(item => item.json.status === 'healthy').length;\nlet unhealthyChecks = data.filter(item => item.json.status === 'unhealthy' || item.json.status === 'slow').length;\nlet downChecks = data.filter(item => item.json.status === 'down').length;\nlet criticalIssues = data.filter(item => item.json.severity === 'critical').length;\n\n// Calculate average response time\nconst responseTimes = data.filter(item => item.json.responseTime).map(item => item.json.responseTime);\nconst averageResponseTime = responseTimes.length > 0 ? Math.round(responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length) : 0;\n\n// Calculate uptime percentage\nconst uptimePercentage = totalChecks > 0 ? Math.round((healthyChecks / totalChecks) * 100) : 0;\n\n// Generate API-specific reports\nconst apiReports = Object.entries(apiGroups).map(([apiName, checks]) => {\n  const apiHealthy = checks.filter(check => check.status === 'healthy').length;\n  const apiTotal = checks.length;\n  const apiUptime = apiTotal > 0 ? Math.round((apiHealthy / apiTotal) * 100) : 0;\n  const apiAvgResponseTime = checks.filter(check => check.responseTime).length > 0 \n    ? Math.round(checks.filter(check => check.responseTime).reduce((a, b) => a + b.responseTime, 0) / checks.filter(check => check.responseTime).length)\n    : 0;\n  \n  const recentIssues = checks.filter(check => check.status !== 'healthy').slice(-3);\n  \n  return {\n    name: apiName,\n    uptime: apiUptime,\n    totalChecks: apiTotal,\n    healthyChecks: apiHealthy,\n    averageResponseTime: apiAvgResponseTime,\n    recentIssues: recentIssues.map(issue => ({\n      status: issue.status,\n      issues: issue.issues,\n      time: issue.checkedAt\n    }))\n  };\n});\n\n// Generate report text\nlet report = `📊 **Daily API Monitoring Report**\\n`;\nreport += `📅 **Period:** Last 24 hours\\n`;\nreport += `⏰ **Generated:** ${new Date().toISOString()}\\n\\n`;\n\nreport += `📈 **Overall Statistics:**\\n`;\nreport += `• Total Checks: ${totalChecks}\\n`;\nreport += `• Healthy: ${healthyChecks} (${uptimePercentage}%)\\n`;\nreport += `• Issues: ${unhealthyChecks + downChecks}\\n`;\nreport += `• Critical Issues: ${criticalIssues}\\n`;\nreport += `• Average Response Time: ${averageResponseTime}ms\\n\\n`;\n\nreport += `🔍 **API Details:**\\n`;\napiReports.forEach(api => {\n  const statusEmoji = api.uptime >= 99 ? '✅' : api.uptime >= 95 ? '⚠️' : '🚨';\n  report += `\\n${statusEmoji} **${api.name}**\\n`;\n  report += `  • Uptime: ${api.uptime}% (${api.healthyChecks}/${api.totalChecks})\\n`;\n  report += `  • Avg Response: ${api.averageResponseTime}ms\\n`;\n  \n  if (api.recentIssues.length > 0) {\n    report += `  • Recent Issues:\\n`;\n    api.recentIssues.forEach(issue => {\n      report += `    - ${issue.status}: ${issue.issues.join(', ')}\\n`;\n    });\n  }\n});\n\nreport += `\\n[📊 View Full Dashboard](https://docs.google.com/spreadsheets/d/your-api-monitoring-sheet-id)`;\n\nconst summary = {\n  totalChecks,\n  healthyChecks,\n  unhealthyChecks,\n  downChecks,\n  criticalIssues,\n  averageResponseTime,\n  uptimePercentage,\n  apiCount: Object.keys(apiGroups).length,\n  apiReports\n};\n\nreturn [{\n  json: {\n    report,\n    summary,\n    generatedAt: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "3m4n5o6p-7q8r-9s0t-1u2v-w3x4y5z6a7b8",
+      "name": "Generate Daily Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 700]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "your-monitoring-chat-id",
+        "text": "{{ $json.report }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "4n5o6p7q-8r9s-0t1u-2v3w-x4y5z6a7b8c9",
+      "name": "Send Daily Report",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [900, 700],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot-credential",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 */6 * * *"
+            }
+          ]
+        }
+      },
+      "id": "5o6p7q8r-9s0t-1u2v-3w4x-y5z6a7b8c9d0",
+      "name": "Cleanup Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 900]
+    },
+    {
+      "parameters": {
+        "operation": "readOrSearch",
+        "documentId": {
+          "__rl": true,
+          "value": "your-api-monitoring-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "API Health Logs"
+        },
+        "options": {
+          "where": {
+            "values": [
+              {
+                "column": "checkedAt",
+                "condition": "dateBefore",
+                "value": "={{ new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString() }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "6p7q8r9s-0t1u-2v3w-4x5y-z6a7b8c9d0e1",
+      "name": "Get Old Records",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [460, 900],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "deleteRows",
+        "documentId": {
+          "__rl": true,
+          "value": "your-api-monitoring-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "API Health Logs"
+        },
+        "options": {
+          "where": {
+            "values": [
+              {
+                "column": "checkedAt",
+                "condition": "dateBefore",
+                "value": "={{ new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString() }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "7q8r9s0t-1u2v-3w4x-5y6z-a7b8c9d0e1f2",
+      "name": "Cleanup Old Records",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [680, 900],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "API Health Check Trigger": {
+      "main": [
+        [
+          {
+            "node": "Define APIs to Monitor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Define APIs to Monitor": {
+      "main": [
+        [
+          {
+            "node": "Check API Health",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check API Health": {
+      "main": [
+        [
+          {
+            "node": "Process Health Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Health Results": {
+      "main": [
+        [
+          {
+            "node": "Log to Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Has Issues?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Issues?": {
+      "main": [
+        [
+          {
+            "node": "Is Critical?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Warning Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Critical?": {
+      "main": [
+        [
+          {
+            "node": "Critical Alert - Telegram",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Critical Alert - Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily Report Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get 24h Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get 24h Data": {
+      "main": [
+        [
+          {
+            "node": "Generate Daily Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Daily Report": {
+      "main": [
+        [
+          {
+            "node": "Send Daily Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cleanup Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Old Records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Old Records": {
+      "main": [
+        [
+          {
+            "node": "Cleanup Old Records",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-12-19T10:00:00.000Z",
+      "updatedAt": "2024-12-19T10:00:00.000Z",
+      "id": "security-monitoring",
+      "name": "Security Monitoring"
+    }
+  ],
+  "triggerCount": 3,
+  "updatedAt": "2024-12-19T10:00:00.000Z",
+  "versionId": "1"
+}

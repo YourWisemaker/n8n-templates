@@ -1,0 +1,540 @@
+{
+  "name": "Discord Bot Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "discord-webhook",
+        "options": {}
+      },
+      "id": "1a2b3c4d-5e6f-7g8h-9i0j-k1l2m3n4o5p6",
+      "name": "Discord Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "discord-bot-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Discord webhook payload\nconst payload = $json.body;\n\n// Extract message data\nconst messageData = {\n  messageId: payload.id,\n  content: payload.content || '',\n  author: {\n    id: payload.author?.id,\n    username: payload.author?.username,\n    discriminator: payload.author?.discriminator,\n    isBot: payload.author?.bot || false\n  },\n  channel: {\n    id: payload.channel_id,\n    name: payload.channel?.name || 'Unknown'\n  },\n  guild: {\n    id: payload.guild_id,\n    name: payload.guild?.name || 'Unknown'\n  },\n  timestamp: payload.timestamp,\n  mentions: payload.mentions || [],\n  attachments: payload.attachments || [],\n  embeds: payload.embeds || [],\n  reactions: payload.reactions || []\n};\n\n// Determine message type and intent\nconst messageType = {\n  isCommand: messageData.content.startsWith('!'),\n  isMention: messageData.mentions.some(mention => mention.id === 'YOUR_BOT_ID'),\n  hasAttachment: messageData.attachments.length > 0,\n  isDirectMessage: !messageData.guild.id,\n  containsKeywords: false\n};\n\n// Check for keywords that trigger automation\nconst keywords = ['help', 'support', 'bug', 'feature', 'question', 'issue'];\nconst content = messageData.content.toLowerCase();\nmessageType.containsKeywords = keywords.some(keyword => content.includes(keyword));\n\n// Extract command if it's a command message\nlet command = null;\nif (messageType.isCommand) {\n  const parts = messageData.content.slice(1).split(' ');\n  command = {\n    name: parts[0].toLowerCase(),\n    args: parts.slice(1),\n    fullCommand: messageData.content\n  };\n}\n\nreturn {\n  json: {\n    ...messageData,\n    messageType,\n    command,\n    shouldProcess: !messageData.author.isBot && (\n      messageType.isCommand || \n      messageType.isMention || \n      messageType.containsKeywords ||\n      messageType.isDirectMessage\n    )\n  }\n};"
+      },
+      "id": "2b3c4d5e-6f7g-8h9i-0j1k-l2m3n4o5p6q7",
+      "name": "Parse Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.shouldProcess }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combineOperation": "all"
+        },
+        "options": {}
+      },
+      "id": "3c4d5e6f-7g8h-9i0j-1k2l-m3n4o5p6q7r8",
+      "name": "Should Process?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.messageType.isCommand }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combineOperation": "all"
+        },
+        "options": {}
+      },
+      "id": "4d5e6f7g-8h9i-0j1k-2l3m-n4o5p6q7r8s9",
+      "name": "Is Command?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Handle Discord bot commands\nconst messageData = $json;\nconst command = messageData.command;\n\nlet response = {\n  content: '',\n  embeds: [],\n  components: []\n};\n\nswitch (command.name) {\n  case 'help':\n    response.embeds = [{\n      title: '🤖 Bot Commands',\n      description: 'Here are the available commands:',\n      color: 0x5865F2,\n      fields: [\n        { name: '!help', value: 'Show this help message', inline: true },\n        { name: '!ping', value: 'Check bot response time', inline: true },\n        { name: '!weather [city]', value: 'Get weather information', inline: true },\n        { name: '!remind [time] [message]', value: 'Set a reminder', inline: true },\n        { name: '!poll [question]', value: 'Create a poll', inline: true },\n        { name: '!stats', value: 'Show server statistics', inline: true }\n      ],\n      timestamp: new Date().toISOString(),\n      footer: { text: 'Bot powered by n8n' }\n    }];\n    break;\n\n  case 'ping':\n    const responseTime = Date.now() - new Date(messageData.timestamp).getTime();\n    response.content = `🏓 Pong! Response time: ${responseTime}ms`;\n    break;\n\n  case 'weather':\n    const city = command.args.join(' ') || 'London';\n    response.embeds = [{\n      title: `🌤️ Weather for ${city}`,\n      description: 'Fetching weather data...',\n      color: 0x87CEEB\n    }];\n    // Weather data will be fetched in next node\n    break;\n\n  case 'remind':\n    if (command.args.length < 2) {\n      response.content = '❌ Usage: !remind [time] [message]\\nExample: !remind 10m Take a break';\n    } else {\n      const timeArg = command.args[0];\n      const reminderMessage = command.args.slice(1).join(' ');\n      response.content = `⏰ Reminder set for ${timeArg}: ${reminderMessage}`;\n      // Reminder logic will be handled in separate workflow\n    }\n    break;\n\n  case 'poll':\n    if (command.args.length === 0) {\n      response.content = '❌ Usage: !poll [question]\\nExample: !poll What should we have for lunch?';\n    } else {\n      const question = command.args.join(' ');\n      response.embeds = [{\n        title: '📊 Poll',\n        description: question,\n        color: 0xFFD700,\n        footer: { text: 'React with 👍 or 👎 to vote!' }\n      }];\n    }\n    break;\n\n  case 'stats':\n    response.embeds = [{\n      title: '📈 Server Statistics',\n      color: 0x00FF00,\n      fields: [\n        { name: 'Members', value: 'Loading...', inline: true },\n        { name: 'Channels', value: 'Loading...', inline: true },\n        { name: 'Roles', value: 'Loading...', inline: true }\n      ]\n    }];\n    // Stats will be fetched from Discord API\n    break;\n\n  default:\n    response.content = `❓ Unknown command: ${command.name}\\nType !help for available commands.`;\n}\n\nreturn {\n  json: {\n    ...messageData,\n    response,\n    needsWeatherData: command.name === 'weather',\n    needsStatsData: command.name === 'stats',\n    weatherCity: command.name === 'weather' ? (command.args.join(' ') || 'London') : null\n  }\n};"
+      },
+      "id": "5e6f7g8h-9i0j-1k2l-3m4n-o5p6q7r8s9t0",
+      "name": "Handle Commands",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.messageType.containsKeywords || $json.messageType.isMention }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combineOperation": "all"
+        },
+        "options": {}
+      },
+      "id": "6f7g8h9i-0j1k-2l3m-4n5o-p6q7r8s9t0u1",
+      "name": "Needs AI Response?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "operation": "create",
+        "model": {
+          "__rl": true,
+          "value": "gpt-4",
+          "mode": "list"
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a helpful Discord bot assistant. Respond to user messages in a friendly, concise manner. Keep responses under 2000 characters. Use Discord markdown formatting when appropriate. If the user mentions help, support, bugs, or questions, provide helpful guidance."
+            },
+            {
+              "role": "user",
+              "content": "User {{ $json.author.username }} in #{{ $json.channel.name }} said: {{ $json.content }}"
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.7,
+          "maxTokens": 500
+        }
+      },
+      "id": "7g8h9i0j-1k2l-3m4n-5o6p-q7r8s9t0u1v2",
+      "name": "Generate AI Response",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [1120, 400],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://api.openweathermap.org/data/2.5/weather",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{ $json.weatherCity }}"
+            },
+            {
+              "name": "appid",
+              "value": "YOUR_OPENWEATHER_API_KEY"
+            },
+            {
+              "name": "units",
+              "value": "metric"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8h9i0j1k-2l3m-4n5o-6p7q-r8s9t0u1v2w3",
+      "name": "Get Weather Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 100],
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "url": "https://discord.com/api/v10/guilds/{{ $json.guild.id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "discordApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "with_counts",
+              "value": "true"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "9i0j1k2l-3m4n-5o6p-7q8r-s9t0u1v2w3x4",
+      "name": "Get Server Stats",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 200],
+      "credentials": {
+        "discordApi": {
+          "id": "discord-bot-credential",
+          "name": "Discord Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge all response data\nconst messageData = $('Handle Commands').item.json;\nconst aiResponse = $('Generate AI Response').item?.json;\nconst weatherData = $('Get Weather Data').item?.json;\nconst serverStats = $('Get Server Stats').item?.json;\n\nlet finalResponse = messageData.response;\n\n// Update weather embed if weather data was fetched\nif (messageData.needsWeatherData && weatherData) {\n  if (weatherData.cod === 200) {\n    finalResponse.embeds[0] = {\n      title: `🌤️ Weather for ${weatherData.name}, ${weatherData.sys.country}`,\n      color: 0x87CEEB,\n      fields: [\n        { name: 'Temperature', value: `${Math.round(weatherData.main.temp)}°C (feels like ${Math.round(weatherData.main.feels_like)}°C)`, inline: true },\n        { name: 'Condition', value: weatherData.weather[0].description, inline: true },\n        { name: 'Humidity', value: `${weatherData.main.humidity}%`, inline: true },\n        { name: 'Wind', value: `${weatherData.wind.speed} m/s`, inline: true },\n        { name: 'Pressure', value: `${weatherData.main.pressure} hPa`, inline: true },\n        { name: 'Visibility', value: `${(weatherData.visibility / 1000).toFixed(1)} km`, inline: true }\n      ],\n      thumbnail: { url: `https://openweathermap.org/img/w/${weatherData.weather[0].icon}.png` },\n      timestamp: new Date().toISOString()\n    };\n  } else {\n    finalResponse.content = `❌ Could not fetch weather data for ${messageData.weatherCity}`;\n    finalResponse.embeds = [];\n  }\n}\n\n// Update stats embed if server stats were fetched\nif (messageData.needsStatsData && serverStats) {\n  finalResponse.embeds[0].fields = [\n    { name: 'Members', value: serverStats.approximate_member_count?.toString() || 'N/A', inline: true },\n    { name: 'Online', value: serverStats.approximate_presence_count?.toString() || 'N/A', inline: true },\n    { name: 'Server Name', value: serverStats.name || 'N/A', inline: true },\n    { name: 'Created', value: new Date(((parseInt(serverStats.id) >> 22) + 1420070400000)).toLocaleDateString(), inline: true },\n    { name: 'Verification Level', value: ['None', 'Low', 'Medium', 'High', 'Very High'][serverStats.verification_level] || 'Unknown', inline: true },\n    { name: 'Boost Level', value: `Level ${serverStats.premium_tier}`, inline: true }\n  ];\n}\n\n// Use AI response if no command was processed\nif (!messageData.messageType.isCommand && aiResponse) {\n  finalResponse = {\n    content: aiResponse.choices[0].message.content,\n    embeds: [],\n    components: []\n  };\n}\n\nreturn {\n  json: {\n    ...messageData,\n    finalResponse,\n    discordPayload: {\n      content: finalResponse.content || null,\n      embeds: finalResponse.embeds.length > 0 ? finalResponse.embeds : null,\n      components: finalResponse.components.length > 0 ? finalResponse.components : null\n    }\n  }\n};"
+      },
+      "id": "0j1k2l3m-4n5o-6p7q-8r9s-t0u1v2w3x4y5",
+      "name": "Merge Responses",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://discord.com/api/v10/channels/{{ $json.channel.id }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "discordApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "content",
+              "value": "={{ $json.discordPayload.content }}"
+            },
+            {
+              "name": "embeds",
+              "value": "={{ $json.discordPayload.embeds }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1k2l3m4n-5o6p-7q8r-9s0t-u1v2w3x4y5z6",
+      "name": "Send Discord Response",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1780, 300],
+      "credentials": {
+        "discordApi": {
+          "id": "discord-bot-credential",
+          "name": "Discord Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "your-discord-logs-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Discord Logs"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $json.timestamp }}",
+            "messageId": "={{ $json.messageId }}",
+            "author": "={{ $json.author.username }}",
+            "channel": "={{ $json.channel.name }}",
+            "guild": "={{ $json.guild.name }}",
+            "content": "={{ $json.content }}",
+            "isCommand": "={{ $json.messageType.isCommand }}",
+            "commandName": "={{ $json.command?.name || 'N/A' }}",
+            "responseType": "={{ $json.messageType.isCommand ? 'Command' : 'AI Response' }}",
+            "processed": "=TRUE"
+          },
+          "matchingColumns": [
+            "messageId"
+          ],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "messageId",
+              "displayName": "messageId",
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "author",
+              "displayName": "author",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "channel",
+              "displayName": "channel",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "guild",
+              "displayName": "guild",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "content",
+              "displayName": "content",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "isCommand",
+              "displayName": "isCommand",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "commandName",
+              "displayName": "commandName",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "responseType",
+              "displayName": "responseType",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "processed",
+              "displayName": "processed",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2l3m4n5o-6p7q-8r9s-0t1u-v2w3x4y5z6a7",
+      "name": "Log Interaction",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [2000, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Discord Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Message": {
+      "main": [
+        [
+          {
+            "node": "Should Process?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Process?": {
+      "main": [
+        [
+          {
+            "node": "Is Command?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Needs AI Response?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Command?": {
+      "main": [
+        [
+          {
+            "node": "Handle Commands",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Commands": {
+      "main": [
+        [
+          {
+            "node": "Get Weather Data",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Server Stats",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge Responses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs AI Response?": {
+      "main": [
+        [
+          {
+            "node": "Generate AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate AI Response": {
+      "main": [
+        [
+          {
+            "node": "Merge Responses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Weather Data": {
+      "main": [
+        [
+          {
+            "node": "Merge Responses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Server Stats": {
+      "main": [
+        [
+          {
+            "node": "Merge Responses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Responses": {
+      "main": [
+        [
+          {
+            "node": "Send Discord Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Discord Response": {
+      "main": [
+        [
+          {
+            "node": "Log Interaction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-12-19T10:00:00.000Z",
+      "updatedAt": "2024-12-19T10:00:00.000Z",
+      "id": "messaging-social",
+      "name": "Messaging & Social"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-12-19T10:00:00.000Z",
+  "versionId": "1"
+}

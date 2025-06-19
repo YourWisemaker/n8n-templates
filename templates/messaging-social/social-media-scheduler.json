@@ -1,0 +1,496 @@
+{
+  "name": "Social Media Content Scheduler",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "readOrSearch",
+        "documentId": {
+          "__rl": true,
+          "value": "your-content-calendar-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Content Calendar"
+        },
+        "options": {
+          "where": {
+            "values": [
+              {
+                "column": "scheduledDate",
+                "condition": "equal",
+                "value": "={{ new Date().toISOString().split('T')[0] }}"
+              },
+              {
+                "column": "status",
+                "condition": "equal",
+                "value": "scheduled"
+              }
+            ],
+            "combineOperation": "all"
+          }
+        }
+      },
+      "id": "1a2b3c4d-5e6f-7g8h-9i0j-k1l2m3n4o5p6",
+      "name": "Get Today's Content",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [240, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process content for different platforms\nconst contentItems = $input.all();\n\nif (contentItems.length === 0) {\n  return { json: { noContent: true, message: 'No content scheduled for today' } };\n}\n\nconst processedContent = contentItems.map(item => {\n  const content = item.json;\n  \n  // Parse platforms (comma-separated)\n  const platforms = content.platforms ? content.platforms.split(',').map(p => p.trim()) : [];\n  \n  // Generate platform-specific content\n  const platformContent = {};\n  \n  platforms.forEach(platform => {\n    let text = content.content || '';\n    let hashtags = content.hashtags || '';\n    \n    switch(platform.toLowerCase()) {\n      case 'twitter':\n        // Twitter: 280 char limit, optimize hashtags\n        if (text.length + hashtags.length > 270) {\n          text = text.substring(0, 270 - hashtags.length - 3) + '...';\n        }\n        platformContent.twitter = {\n          text: text + '\\n\\n' + hashtags,\n          media: content.imageUrl || ''\n        };\n        break;\n        \n      case 'linkedin':\n        // LinkedIn: Professional tone, longer content\n        platformContent.linkedin = {\n          text: text + '\\n\\n' + hashtags,\n          media: content.imageUrl || ''\n        };\n        break;\n        \n      case 'facebook':\n        // Facebook: Engaging, can be longer\n        platformContent.facebook = {\n          text: text + '\\n\\n' + hashtags,\n          media: content.imageUrl || ''\n        };\n        break;\n        \n      case 'instagram':\n        // Instagram: Visual-first, hashtag heavy\n        platformContent.instagram = {\n          text: text + '\\n\\n' + hashtags,\n          media: content.imageUrl || '',\n          required_media: true\n        };\n        break;\n    }\n  });\n  \n  return {\n    id: content.id || Date.now(),\n    title: content.title || '',\n    scheduledTime: content.scheduledTime || '09:00',\n    platforms: platforms,\n    platformContent: platformContent,\n    originalContent: content\n  };\n});\n\nreturn processedContent.map(item => ({ json: item }));"
+      },
+      "id": "2b3c4d5e-6f7g-8h9i-0j1k-l2m3n4o5p6q7",
+      "name": "Process Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.platforms }}",
+              "rightValue": "twitter",
+              "operator": {
+                "type": "array",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combineOperation": "all"
+        },
+        "options": {}
+      },
+      "id": "3c4d5e6f-7g8h-9i0j-1k2l-m3n4o5p6q7r8",
+      "name": "Has Twitter?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 180]
+    },
+    {
+      "parameters": {
+        "operation": "tweet",
+        "text": "={{ $json.platformContent.twitter.text }}",
+        "additionalFields": {
+          "attachments": "={{ $json.platformContent.twitter.media ? $json.platformContent.twitter.media : undefined }}"
+        }
+      },
+      "id": "4d5e6f7g-8h9i-0j1k-2l3m-n4o5p6q7r8s9",
+      "name": "Post to Twitter",
+      "type": "n8n-nodes-base.twitter",
+      "typeVersion": 2,
+      "position": [900, 180],
+      "credentials": {
+        "twitterOAuth2Api": {
+          "id": "twitter-oauth-credential",
+          "name": "Twitter OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.platforms }}",
+              "rightValue": "linkedin",
+              "operator": {
+                "type": "array",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combineOperation": "all"
+        },
+        "options": {}
+      },
+      "id": "5e6f7g8h-9i0j-1k2l-3m4n-o5p6q7r8s9t0",
+      "name": "Has LinkedIn?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "operation": "createPost",
+        "text": "={{ $json.platformContent.linkedin.text }}",
+        "additionalFields": {
+          "visibility": "public"
+        }
+      },
+      "id": "6f7g8h9i-0j1k-2l3m-4n5o-p6q7r8s9t0u1",
+      "name": "Post to LinkedIn",
+      "type": "n8n-nodes-base.linkedIn",
+      "typeVersion": 1,
+      "position": [900, 300],
+      "credentials": {
+        "linkedInOAuth2Api": {
+          "id": "linkedin-oauth-credential",
+          "name": "LinkedIn OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.platforms }}",
+              "rightValue": "facebook",
+              "operator": {
+                "type": "array",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combineOperation": "all"
+        },
+        "options": {}
+      },
+      "id": "7g8h9i0j-1k2l-3m4n-5o6p-q7r8s9t0u1v2",
+      "name": "Has Facebook?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 420]
+    },
+    {
+      "parameters": {
+        "operation": "createPost",
+        "pageId": "your-facebook-page-id",
+        "content": "={{ $json.platformContent.facebook.text }}",
+        "additionalFields": {
+          "link": "={{ $json.platformContent.facebook.media }}"
+        }
+      },
+      "id": "8h9i0j1k-2l3m-4n5o-6p7q-r8s9t0u1v2w3",
+      "name": "Post to Facebook",
+      "type": "n8n-nodes-base.facebookGraphApi",
+      "typeVersion": 1,
+      "position": [900, 420],
+      "credentials": {
+        "facebookGraphApi": {
+          "id": "facebook-graph-credential",
+          "name": "Facebook Graph API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Collect all posting results\nconst results = $input.all();\nconst originalContent = $('Process Content').all();\n\nconst summary = {\n  totalPosts: originalContent.length,\n  successfulPosts: results.filter(r => r.json && !r.json.error).length,\n  failedPosts: results.filter(r => r.json && r.json.error).length,\n  platforms: [],\n  details: []\n};\n\n// Process results by platform\nresults.forEach(result => {\n  if (result.json && !result.json.error) {\n    const platform = result.json.platform || 'unknown';\n    if (!summary.platforms.includes(platform)) {\n      summary.platforms.push(platform);\n    }\n    \n    summary.details.push({\n      platform: platform,\n      status: 'success',\n      postId: result.json.id || result.json.post_id || 'unknown',\n      timestamp: new Date().toISOString()\n    });\n  } else if (result.json && result.json.error) {\n    summary.details.push({\n      platform: result.json.platform || 'unknown',\n      status: 'failed',\n      error: result.json.error,\n      timestamp: new Date().toISOString()\n    });\n  }\n});\n\nconst reportMessage = `📱 **Social Media Posting Report**\n\n` +\n  `**Summary:**\n` +\n  `• Total posts scheduled: ${summary.totalPosts}\n` +\n  `• Successful posts: ${summary.successfulPosts}\n` +\n  `• Failed posts: ${summary.failedPosts}\n` +\n  `• Platforms: ${summary.platforms.join(', ')}\n\n` +\n  `**Details:**\n` +\n  summary.details.map(detail => \n    `• ${detail.platform}: ${detail.status}${detail.status === 'failed' ? ` (${detail.error})` : ''}`\n  ).join('\\n') +\n  `\n\n*Report generated at ${new Date().toLocaleString()}*`;\n\nreturn {\n  json: {\n    summary: summary,\n    reportMessage: reportMessage,\n    timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "9i0j1k2l-3m4n-5o6p-7q8r-s9t0u1v2w3x4",
+      "name": "Generate Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "your-content-calendar-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Content Calendar"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "published",
+            "publishedAt": "={{ new Date().toISOString() }}",
+            "results": "={{ JSON.stringify($json.summary) }}"
+          },
+          "matchingColumns": [
+            "scheduledDate"
+          ],
+          "schema": [
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "publishedAt",
+              "displayName": "publishedAt",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "results",
+              "displayName": "results",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "0j1k2l3m-4n5o-6p7q-8r9s-t0u1v2w3x4y5",
+      "name": "Update Content Status",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1340, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "your-marketing-team-chat-id",
+        "text": "={{ $json.reportMessage }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "1k2l3m4n-5o6p-7q8r-9s0t-u1v2w3x4y5z6",
+      "name": "Send Report",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1560, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot-credential",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9,14,18 * * *"
+            }
+          ]
+        }
+      },
+      "id": "2l3m4n5o-6p7q-8r9s-0t1u-v2w3x4y5z6a7",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 500]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "options": {
+          "temperature": 0.8,
+          "maxTokens": 500
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a social media content creator. Generate engaging, platform-appropriate content based on the given topic and platform requirements. Include relevant hashtags and maintain brand voice."
+            },
+            {
+              "role": "user",
+              "content": "Generate social media content for:\n\nTopic: {{ $json.topic || 'daily motivation' }}\nPlatforms: {{ $json.platforms || 'twitter,linkedin' }}\nTone: {{ $json.tone || 'professional and inspiring' }}\nTarget audience: {{ $json.audience || 'professionals' }}\n\nCreate engaging content with appropriate hashtags for each platform."
+            }
+          ]
+        }
+      },
+      "id": "3m4n5o6p-7q8r-9s0t-1u2v-w3x4y5z6a7b8",
+      "name": "AI Content Generator",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1,
+      "position": [460, 500],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-api-credential",
+          "name": "OpenAI API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Get Today's Content": {
+      "main": [
+        [
+          {
+            "node": "Process Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Content": {
+      "main": [
+        [
+          {
+            "node": "Has Twitter?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Has LinkedIn?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Has Facebook?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Twitter?": {
+      "main": [
+        [
+          {
+            "node": "Post to Twitter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has LinkedIn?": {
+      "main": [
+        [
+          {
+            "node": "Post to LinkedIn",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Facebook?": {
+      "main": [
+        [
+          {
+            "node": "Post to Facebook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post to Twitter": {
+      "main": [
+        [
+          {
+            "node": "Generate Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post to LinkedIn": {
+      "main": [
+        [
+          {
+            "node": "Generate Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post to Facebook": {
+      "main": [
+        [
+          {
+            "node": "Generate Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Report": {
+      "main": [
+        [
+          {
+            "node": "Update Content Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Content Status": {
+      "main": [
+        [
+          {
+            "node": "Send Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Today's Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-12-19T10:00:00.000Z",
+      "updatedAt": "2024-12-19T10:00:00.000Z",
+      "id": "messaging-social",
+      "name": "Messaging & Social"
+    }
+  ],
+  "triggerCount": 2,
+  "updatedAt": "2024-12-19T10:00:00.000Z",
+  "versionId": "1"
+}

@@ -1,0 +1,837 @@
+{
+  "name": "Task Automation and Project Management",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "task-webhook",
+        "options": {}
+      },
+      "id": "1a2b3c4d-5e6f-7g8h-9i0j-k1l2m3n4o5p6",
+      "name": "Task Creation Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "task-creation-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse and validate task data\nconst payload = $json.body;\n\n// Extract task information\nconst taskData = {\n  id: payload.id || `task_${Date.now()}`,\n  title: payload.title || '',\n  description: payload.description || '',\n  priority: payload.priority || 'medium',\n  status: payload.status || 'todo',\n  assignee: payload.assignee || '',\n  assigneeEmail: payload.assigneeEmail || '',\n  project: payload.project || 'General',\n  category: payload.category || 'Task',\n  tags: payload.tags || [],\n  dueDate: payload.dueDate || '',\n  estimatedHours: payload.estimatedHours || 0,\n  actualHours: payload.actualHours || 0,\n  dependencies: payload.dependencies || [],\n  attachments: payload.attachments || [],\n  comments: payload.comments || [],\n  createdBy: payload.createdBy || 'System',\n  createdAt: new Date().toISOString(),\n  updatedAt: new Date().toISOString()\n};\n\n// Validate required fields\nconst isValid = taskData.title && taskData.title.trim().length > 0;\n\n// Determine task urgency based on priority and due date\nlet urgency = 'normal';\nif (taskData.dueDate) {\n  const dueDate = new Date(taskData.dueDate);\n  const now = new Date();\n  const daysUntilDue = Math.ceil((dueDate - now) / (1000 * 60 * 60 * 24));\n  \n  if (daysUntilDue <= 1 && taskData.priority === 'high') {\n    urgency = 'critical';\n  } else if (daysUntilDue <= 3 && (taskData.priority === 'high' || taskData.priority === 'medium')) {\n    urgency = 'urgent';\n  } else if (daysUntilDue <= 7 && taskData.priority === 'high') {\n    urgency = 'high';\n  }\n}\n\n// Generate task summary\nconst taskSummary = {\n  ...taskData,\n  urgency,\n  isValid,\n  dueDays: taskData.dueDate ? Math.ceil((new Date(taskData.dueDate) - new Date()) / (1000 * 60 * 60 * 24)) : null,\n  isOverdue: taskData.dueDate ? new Date(taskData.dueDate) < new Date() : false\n};\n\nreturn { json: taskSummary };"
+      },
+      "id": "2b3c4d5e-6f7g-8h9i-0j1k-l2m3n4o5p6q7",
+      "name": "Parse Task Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.isValid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combineOperation": "all"
+        },
+        "options": {}
+      },
+      "id": "3c4d5e6f-7g8h-9i0j-1k2l-m3n4o5p6q7r8",
+      "name": "Is Valid Task?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "your-project-management-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Tasks"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "taskId": "={{ $json.id }}",
+            "title": "={{ $json.title }}",
+            "description": "={{ $json.description }}",
+            "priority": "={{ $json.priority }}",
+            "status": "={{ $json.status }}",
+            "assignee": "={{ $json.assignee }}",
+            "assigneeEmail": "={{ $json.assigneeEmail }}",
+            "project": "={{ $json.project }}",
+            "category": "={{ $json.category }}",
+            "tags": "={{ $json.tags.join(', ') }}",
+            "dueDate": "={{ $json.dueDate }}",
+            "estimatedHours": "={{ $json.estimatedHours }}",
+            "actualHours": "={{ $json.actualHours }}",
+            "urgency": "={{ $json.urgency }}",
+            "dueDays": "={{ $json.dueDays }}",
+            "isOverdue": "={{ $json.isOverdue }}",
+            "createdBy": "={{ $json.createdBy }}",
+            "createdAt": "={{ $json.createdAt }}",
+            "updatedAt": "={{ $json.updatedAt }}"
+          },
+          "matchingColumns": [
+            "taskId"
+          ],
+          "schema": [
+            {
+              "id": "taskId",
+              "displayName": "taskId",
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "title",
+              "displayName": "title",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "description",
+              "displayName": "description",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "priority",
+              "displayName": "priority",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "assignee",
+              "displayName": "assignee",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "assigneeEmail",
+              "displayName": "assigneeEmail",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "project",
+              "displayName": "project",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "category",
+              "displayName": "category",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tags",
+              "displayName": "tags",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "dueDate",
+              "displayName": "dueDate",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "estimatedHours",
+              "displayName": "estimatedHours",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "actualHours",
+              "displayName": "actualHours",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "urgency",
+              "displayName": "urgency",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "dueDays",
+              "displayName": "dueDays",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "isOverdue",
+              "displayName": "isOverdue",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "createdBy",
+              "displayName": "createdBy",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "createdAt",
+              "displayName": "createdAt",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "updatedAt",
+              "displayName": "updatedAt",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4d5e6f7g-8h9i-0j1k-2l3m-n4o5p6q7r8s9",
+      "name": "Save Task",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [900, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.assigneeEmail }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combineOperation": "all"
+        },
+        "options": {}
+      },
+      "id": "5e6f7g8h-9i0j-1k2l-3m4n-o5p6q7r8s9t0",
+      "name": "Has Assignee Email?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "operation": "create",
+        "model": {
+          "__rl": true,
+          "value": "gpt-4",
+          "mode": "list"
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a project management assistant. Create a professional task assignment email that clearly communicates the task details, expectations, and deadlines. Be encouraging and provide clear next steps."
+            },
+            {
+              "role": "user",
+              "content": "Create a task assignment email for:\n\nTask: {{ $json.title }}\nDescription: {{ $json.description }}\nAssignee: {{ $json.assignee }}\nPriority: {{ $json.priority }}\nDue Date: {{ $json.dueDate || 'Not specified' }}\nEstimated Hours: {{ $json.estimatedHours || 'Not specified' }}\nProject: {{ $json.project }}\nUrgency: {{ $json.urgency }}\nCreated By: {{ $json.createdBy }}\n\nMake it professional, clear, and motivating."
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.7,
+          "maxTokens": 800
+        }
+      },
+      "id": "6f7g8h9i-0j1k-2l3m-4n5o-p6q7r8s9t0u1",
+      "name": "Generate Assignment Email",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [1340, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "message": {
+          "to": "={{ $json.assigneeEmail }}",
+          "subject": "New Task Assignment: {{ $json.title }} [{{ $json.priority.toUpperCase() }} Priority]",
+          "body": "={{ $('Generate Assignment Email').item.json.choices[0].message.content }}",
+          "options": {
+            "bodyType": "html"
+          }
+        },
+        "options": {}
+      },
+      "id": "7g8h9i0j-1k2l-3m4n-5o6p-q7r8s9t0u1v2",
+      "name": "Send Assignment Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [1560, 300],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-oauth-credential",
+          "name": "Gmail OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.urgency }}",
+              "rightValue": "critical",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "leftValue": "={{ $json.urgency }}",
+              "rightValue": "urgent",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combineOperation": "any"
+        },
+        "options": {}
+      },
+      "id": "8h9i0j1k-2l3m-4n5o-6p7q-r8s9t0u1v2w3",
+      "name": "Is Urgent Task?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1780, 200]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "your-project-team-chat-id",
+        "text": "🚨 **URGENT TASK ALERT** 🚨\n\n**Task:** {{ $json.title }}\n**Assignee:** {{ $json.assignee }}\n**Priority:** {{ $json.priority.toUpperCase() }}\n**Urgency:** {{ $json.urgency.toUpperCase() }}\n**Due Date:** {{ $json.dueDate || 'Not specified' }}\n**Project:** {{ $json.project }}\n\n**Description:**\n{{ $json.description }}\n\n**Days until due:** {{ $json.dueDays || 'N/A' }}\n**Overdue:** {{ $json.isOverdue ? 'YES' : 'NO' }}\n\n[📊 View Project Dashboard](https://docs.google.com/spreadsheets/d/your-project-management-sheet-id)\n\n**Action Required:** Immediate attention needed!",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "9i0j1k2l-3m4n-5o6p-7q8r-s9t0u1v2w3x4",
+      "name": "Urgent Task Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [2000, 200],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot-credential",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "your-project-team-chat-id",
+        "text": "📋 **New Task Created**\n\n**Task:** {{ $json.title }}\n**Assignee:** {{ $json.assignee || 'Unassigned' }}\n**Priority:** {{ $json.priority }}\n**Project:** {{ $json.project }}\n**Due Date:** {{ $json.dueDate || 'Not specified' }}\n\n[📊 Dashboard](https://docs.google.com/spreadsheets/d/your-project-management-sheet-id)",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "0j1k2l3m-4n5o-6p7q-8r9s-t0u1v2w3x4y5",
+      "name": "Notify Team",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1780, 400],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot-credential",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "1k2l3m4n-5o6p-7q8r-9s0t-u1v2w3x4y5z6",
+      "name": "Daily Task Review",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 600]
+    },
+    {
+      "parameters": {
+        "operation": "readOrSearch",
+        "documentId": {
+          "__rl": true,
+          "value": "your-project-management-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Tasks"
+        },
+        "options": {
+          "where": {
+            "values": [
+              {
+                "column": "status",
+                "condition": "notEqual",
+                "value": "completed"
+              },
+              {
+                "column": "status",
+                "condition": "notEqual",
+                "value": "cancelled"
+              }
+            ],
+            "combineOperation": "all"
+          }
+        }
+      },
+      "id": "2l3m4n5o-6p7q-8r9s-0t1u-v2w3x4y5z6a7",
+      "name": "Get Active Tasks",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [460, 600],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate daily task summary and identify issues\nconst tasks = $input.all();\n\nif (!tasks || tasks.length === 0) {\n  return [{\n    json: {\n      summary: 'No active tasks found.',\n      stats: {\n        total: 0,\n        overdue: 0,\n        dueSoon: 0,\n        highPriority: 0,\n        unassigned: 0\n      },\n      issues: []\n    }\n  }];\n}\n\n// Calculate statistics\nconst now = new Date();\nconst stats = {\n  total: tasks.length,\n  overdue: 0,\n  dueSoon: 0,\n  highPriority: 0,\n  unassigned: 0,\n  byStatus: {},\n  byProject: {},\n  byAssignee: {}\n};\n\nconst issues = [];\nconst overdueTasks = [];\nconst dueSoonTasks = [];\n\ntasks.forEach(item => {\n  const task = item.json;\n  \n  // Count by status\n  stats.byStatus[task.status] = (stats.byStatus[task.status] || 0) + 1;\n  \n  // Count by project\n  stats.byProject[task.project] = (stats.byProject[task.project] || 0) + 1;\n  \n  // Count by assignee\n  const assignee = task.assignee || 'Unassigned';\n  stats.byAssignee[assignee] = (stats.byAssignee[assignee] || 0) + 1;\n  \n  // Check for overdue tasks\n  if (task.dueDate) {\n    const dueDate = new Date(task.dueDate);\n    const daysUntilDue = Math.ceil((dueDate - now) / (1000 * 60 * 60 * 24));\n    \n    if (daysUntilDue < 0) {\n      stats.overdue++;\n      overdueTasks.push({\n        title: task.title,\n        assignee: task.assignee,\n        daysOverdue: Math.abs(daysUntilDue),\n        priority: task.priority\n      });\n    } else if (daysUntilDue <= 3) {\n      stats.dueSoon++;\n      dueSoonTasks.push({\n        title: task.title,\n        assignee: task.assignee,\n        daysUntilDue: daysUntilDue,\n        priority: task.priority\n      });\n    }\n  }\n  \n  // Check for high priority tasks\n  if (task.priority === 'high' || task.priority === 'critical') {\n    stats.highPriority++;\n  }\n  \n  // Check for unassigned tasks\n  if (!task.assignee || task.assignee.trim() === '') {\n    stats.unassigned++;\n  }\n});\n\n// Generate issues list\nif (stats.overdue > 0) {\n  issues.push(`${stats.overdue} overdue tasks need immediate attention`);\n}\nif (stats.dueSoon > 0) {\n  issues.push(`${stats.dueSoon} tasks due within 3 days`);\n}\nif (stats.unassigned > 0) {\n  issues.push(`${stats.unassigned} tasks are unassigned`);\n}\nif (stats.highPriority > 5) {\n  issues.push(`${stats.highPriority} high priority tasks may indicate resource constraints`);\n}\n\n// Generate summary text\nlet summary = `📊 **Daily Task Summary**\\n`;\nsummary += `📅 **Date:** ${now.toDateString()}\\n\\n`;\n\nsummary += `📈 **Overview:**\\n`;\nsummary += `• Total Active Tasks: ${stats.total}\\n`;\nsummary += `• Overdue: ${stats.overdue} 🚨\\n`;\nsummary += `• Due Soon (≤3 days): ${stats.dueSoon} ⚠️\\n`;\nsummary += `• High Priority: ${stats.highPriority}\\n`;\nsummary += `• Unassigned: ${stats.unassigned}\\n\\n`;\n\nif (Object.keys(stats.byStatus).length > 0) {\n  summary += `📋 **By Status:**\\n`;\n  Object.entries(stats.byStatus).forEach(([status, count]) => {\n    summary += `• ${status}: ${count}\\n`;\n  });\n  summary += `\\n`;\n}\n\nif (Object.keys(stats.byProject).length > 0) {\n  summary += `🏗️ **By Project:**\\n`;\n  Object.entries(stats.byProject).forEach(([project, count]) => {\n    summary += `• ${project}: ${count}\\n`;\n  });\n  summary += `\\n`;\n}\n\nif (overdueTasks.length > 0) {\n  summary += `🚨 **Overdue Tasks:**\\n`;\n  overdueTasks.slice(0, 5).forEach(task => {\n    summary += `• ${task.title} (${task.assignee || 'Unassigned'}) - ${task.daysOverdue} days overdue\\n`;\n  });\n  if (overdueTasks.length > 5) {\n    summary += `• ... and ${overdueTasks.length - 5} more\\n`;\n  }\n  summary += `\\n`;\n}\n\nif (dueSoonTasks.length > 0) {\n  summary += `⚠️ **Due Soon:**\\n`;\n  dueSoonTasks.slice(0, 5).forEach(task => {\n    summary += `• ${task.title} (${task.assignee || 'Unassigned'}) - ${task.daysUntilDue} days\\n`;\n  });\n  if (dueSoonTasks.length > 5) {\n    summary += `• ... and ${dueSoonTasks.length - 5} more\\n`;\n  }\n  summary += `\\n`;\n}\n\nsummary += `[📊 View Full Dashboard](https://docs.google.com/spreadsheets/d/your-project-management-sheet-id)`;\n\nreturn [{\n  json: {\n    summary,\n    stats,\n    issues,\n    overdueTasks,\n    dueSoonTasks,\n    generatedAt: now.toISOString()\n  }\n}];"
+      },
+      "id": "3m4n5o6p-7q8r-9s0t-1u2v-w3x4y5z6a7b8",
+      "name": "Generate Task Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 600]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "your-project-team-chat-id",
+        "text": "{{ $json.summary }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "4n5o6p7q-8r9s-0t1u-2v3w-x4y5z6a7b8c9",
+      "name": "Send Daily Summary",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [900, 600],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot-credential",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "5o6p7q8r-9s0t-1u2v-3w4x-y5z6a7b8c9d0",
+      "name": "Weekly Report Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 800]
+    },
+    {
+      "parameters": {
+        "operation": "readOrSearch",
+        "documentId": {
+          "__rl": true,
+          "value": "your-project-management-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Tasks"
+        },
+        "options": {
+          "where": {
+            "values": [
+              {
+                "column": "updatedAt",
+                "condition": "dateAfter",
+                "value": "={{ new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString() }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "6p7q8r9s-0t1u-2v3w-4x5y-z6a7b8c9d0e1",
+      "name": "Get Weekly Data",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [460, 800],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "operation": "create",
+        "model": {
+          "__rl": true,
+          "value": "gpt-4",
+          "mode": "list"
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a project management analyst. Generate a comprehensive weekly project report based on task data. Include insights, trends, recommendations, and actionable next steps. Focus on productivity, bottlenecks, and team performance."
+            },
+            {
+              "role": "user",
+              "content": "Generate a weekly project report based on this task data from the last 7 days:\n\nTotal tasks: {{ $input.all().length }}\nCompleted tasks: {{ $input.all().filter(item => item.json.status === 'completed').length }}\nIn progress: {{ $input.all().filter(item => item.json.status === 'in-progress').length }}\nOverdue tasks: {{ $input.all().filter(item => item.json.isOverdue === true).length }}\n\nTask breakdown by project:\n{{ Object.entries($input.all().reduce((acc, item) => { acc[item.json.project] = (acc[item.json.project] || 0) + 1; return acc; }, {})).map(([project, count]) => `${project}: ${count}`).join('\\n') }}\n\nTask breakdown by assignee:\n{{ Object.entries($input.all().reduce((acc, item) => { const assignee = item.json.assignee || 'Unassigned'; acc[assignee] = (acc[assignee] || 0) + 1; return acc; }, {})).map(([assignee, count]) => `${assignee}: ${count}`).join('\\n') }}\n\nInclude insights, trends, and actionable recommendations."
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.7,
+          "maxTokens": 1500
+        }
+      },
+      "id": "7q8r9s0t-1u2v-3w4x-5y6z-a7b8c9d0e1f2",
+      "name": "Generate Weekly Report",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [680, 800],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "your-management-chat-id",
+        "text": "📊 **Weekly Project Report**\n\n{{ $json.choices[0].message.content }}\n\n[📊 View Dashboard](https://docs.google.com/spreadsheets/d/your-project-management-sheet-id)",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "8r9s0t1u-2v3w-4x5y-6z7a-b8c9d0e1f2g3",
+      "name": "Send Weekly Report",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [900, 800],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot-credential",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"status\": \"success\",\n  \"taskId\": \"{{ $json.id }}\",\n  \"title\": \"{{ $json.title }}\",\n  \"assignee\": \"{{ $json.assignee }}\",\n  \"priority\": \"{{ $json.priority }}\",\n  \"urgency\": \"{{ $json.urgency }}\",\n  \"dueDate\": \"{{ $json.dueDate }}\",\n  \"message\": \"Task created successfully\"\n}",
+        "options": {}
+      },
+      "id": "9s0t1u2v-3w4x-5y6z-7a8b-c9d0e1f2g3h4",
+      "name": "Return Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2000, 400]
+    }
+  ],
+  "connections": {
+    "Task Creation Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Task Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Task Data": {
+      "main": [
+        [
+          {
+            "node": "Is Valid Task?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Valid Task?": {
+      "main": [
+        [
+          {
+            "node": "Save Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Task": {
+      "main": [
+        [
+          {
+            "node": "Has Assignee Email?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Assignee Email?": {
+      "main": [
+        [
+          {
+            "node": "Generate Assignment Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Urgent Task?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify Team",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Assignment Email": {
+      "main": [
+        [
+          {
+            "node": "Send Assignment Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Assignment Email": {
+      "main": [
+        [
+          {
+            "node": "Is Urgent Task?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify Team",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Urgent Task?": {
+      "main": [
+        [
+          {
+            "node": "Urgent Task Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Team": {
+      "main": [
+        [
+          {
+            "node": "Return Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily Task Review": {
+      "main": [
+        [
+          {
+            "node": "Get Active Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Active Tasks": {
+      "main": [
+        [
+          {
+            "node": "Generate Task Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Task Summary": {
+      "main": [
+        [
+          {
+            "node": "Send Daily Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Weekly Report Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Weekly Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Weekly Data": {
+      "main": [
+        [
+          {
+            "node": "Generate Weekly Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Weekly Report": {
+      "main": [
+        [
+          {
+            "node": "Send Weekly Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-12-19T10:00:00.000Z",
+      "updatedAt": "2024-12-19T10:00:00.000Z",
+      "id": "productivity-workflow",
+      "name": "Productivity & Workflow"
+    }
+  ],
+  "triggerCount": 3,
+  "updatedAt": "2024-12-19T10:00:00.000Z",
+  "versionId": "1"
+}

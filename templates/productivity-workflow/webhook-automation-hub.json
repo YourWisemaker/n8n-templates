@@ -1,0 +1,749 @@
+{
+  "name": "Webhook Automation Hub",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "automation-hub",
+        "options": {}
+      },
+      "id": "1a2b3c4d-5e6f-7g8h-9i0j-k1l2m3n4o5p6",
+      "name": "Automation Hub Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "automation-hub-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse webhook payload and determine automation type\nconst payload = $json.body;\nconst headers = $json.headers;\n\n// Extract automation request data\nconst automationData = {\n  id: payload.id || `auto_${Date.now()}`,\n  type: payload.type || 'unknown', // task, reminder, notification, data-sync, report\n  action: payload.action || 'create', // create, update, delete, execute\n  source: payload.source || headers['user-agent'] || 'unknown',\n  userId: payload.userId || headers['x-user-id'] || 'anonymous',\n  priority: payload.priority || 'medium', // low, medium, high, urgent\n  scheduledTime: payload.scheduledTime || null,\n  data: payload.data || {},\n  metadata: payload.metadata || {},\n  tags: payload.tags || [],\n  category: payload.category || 'general',\n  description: payload.description || '',\n  recipients: payload.recipients || [],\n  settings: payload.settings || {},\n  createdAt: new Date().toISOString()\n};\n\n// Validate required fields\nconst isValid = automationData.type !== 'unknown' && automationData.action;\n\n// Determine if this should be executed immediately or scheduled\nconst shouldExecuteNow = !automationData.scheduledTime || new Date(automationData.scheduledTime) <= new Date();\n\n// Generate execution context\nconst executionContext = {\n  requestId: `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,\n  timestamp: new Date().toISOString(),\n  source: automationData.source,\n  userId: automationData.userId\n};\n\nreturn {\n  json: {\n    ...automationData,\n    isValid,\n    shouldExecuteNow,\n    executionContext\n  }\n};"
+      },
+      "id": "2b3c4d5e-6f7g-8h9i-0j1k-l2m3n4o5p6q7",
+      "name": "Parse Automation Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.isValid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combineOperation": "all"
+        },
+        "options": {}
+      },
+      "id": "3c4d5e6f-7g8h-9i0j-1k2l-m3n4o5p6q7r8",
+      "name": "Is Valid Request?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.type }}",
+              "rightValue": "task",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combineOperation": "all"
+        },
+        "options": {}
+      },
+      "id": "4d5e6f7g-8h9i-0j1k-2l3m-n4o5p6q7r8s9",
+      "name": "Is Task Automation?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process task automation\nconst data = $json;\nconst taskData = data.data;\n\n// Create task object\nconst task = {\n  id: data.id,\n  title: taskData.title || 'Untitled Task',\n  description: taskData.description || data.description || '',\n  assignee: taskData.assignee || data.recipients[0] || 'unassigned',\n  priority: data.priority,\n  status: taskData.status || 'pending',\n  dueDate: taskData.dueDate || data.scheduledTime || null,\n  category: data.category,\n  tags: data.tags,\n  project: taskData.project || 'General',\n  estimatedHours: taskData.estimatedHours || null,\n  dependencies: taskData.dependencies || [],\n  attachments: taskData.attachments || [],\n  createdBy: data.userId,\n  createdAt: data.createdAt,\n  action: data.action\n};\n\n// Generate task notification message\nlet message = '';\nswitch (data.action) {\n  case 'create':\n    message = `📋 **New Task Created**\\n\\n`;\n    message += `**Title:** ${task.title}\\n`;\n    message += `**Assignee:** ${task.assignee}\\n`;\n    message += `**Priority:** ${task.priority}\\n`;\n    message += `**Project:** ${task.project}\\n`;\n    if (task.dueDate) message += `**Due Date:** ${new Date(task.dueDate).toLocaleDateString()}\\n`;\n    if (task.description) message += `**Description:** ${task.description}\\n`;\n    break;\n  case 'update':\n    message = `✏️ **Task Updated**\\n\\n`;\n    message += `**Title:** ${task.title}\\n`;\n    message += `**Status:** ${task.status}\\n`;\n    message += `**Assignee:** ${task.assignee}\\n`;\n    break;\n  case 'delete':\n    message = `🗑️ **Task Deleted**\\n\\n`;\n    message += `**Title:** ${task.title}\\n`;\n    message += `**Deleted by:** ${data.userId}\\n`;\n    break;\n  default:\n    message = `📋 **Task Action: ${data.action}**\\n\\n`;\n    message += `**Title:** ${task.title}\\n`;\n}\n\nreturn {\n  json: {\n    ...data,\n    task,\n    notificationMessage: message,\n    automationType: 'task'\n  }\n};"
+      },
+      "id": "5e6f7g8h-9i0j-1k2l-3m4n-o5p6q7r8s9t0",
+      "name": "Process Task Automation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 180]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.type }}",
+              "rightValue": "reminder",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combineOperation": "all"
+        },
+        "options": {}
+      },
+      "id": "6f7g8h9i-0j1k-2l3m-4n5o-p6q7r8s9t0u1",
+      "name": "Is Reminder Automation?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 420]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process reminder automation\nconst data = $json;\nconst reminderData = data.data;\n\n// Create reminder object\nconst reminder = {\n  id: data.id,\n  title: reminderData.title || 'Reminder',\n  message: reminderData.message || data.description || 'You have a reminder',\n  reminderTime: reminderData.reminderTime || data.scheduledTime || new Date().toISOString(),\n  recipients: data.recipients,\n  frequency: reminderData.frequency || 'once', // once, daily, weekly, monthly\n  isRecurring: reminderData.frequency && reminderData.frequency !== 'once',\n  category: data.category,\n  tags: data.tags,\n  priority: data.priority,\n  createdBy: data.userId,\n  createdAt: data.createdAt,\n  action: data.action\n};\n\n// Generate reminder notification message\nlet message = '';\nswitch (data.action) {\n  case 'create':\n    message = `⏰ **Reminder Set**\\n\\n`;\n    message += `**Title:** ${reminder.title}\\n`;\n    message += `**Message:** ${reminder.message}\\n`;\n    message += `**Time:** ${new Date(reminder.reminderTime).toLocaleString()}\\n`;\n    message += `**Recipients:** ${reminder.recipients.join(', ')}\\n`;\n    if (reminder.isRecurring) message += `**Frequency:** ${reminder.frequency}\\n`;\n    break;\n  case 'execute':\n    message = `🔔 **${reminder.title}**\\n\\n`;\n    message += `${reminder.message}\\n\\n`;\n    message += `*Reminder set by: ${data.userId}*`;\n    break;\n  case 'delete':\n    message = `🗑️ **Reminder Cancelled**\\n\\n`;\n    message += `**Title:** ${reminder.title}\\n`;\n    break;\n  default:\n    message = `⏰ **Reminder Action: ${data.action}**\\n\\n`;\n    message += `**Title:** ${reminder.title}\\n`;\n}\n\nreturn {\n  json: {\n    ...data,\n    reminder,\n    notificationMessage: message,\n    automationType: 'reminder'\n  }\n};"
+      },
+      "id": "7g8h9i0j-1k2l-3m4n-5o6p-q7r8s9t0u1v2",
+      "name": "Process Reminder Automation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.type }}",
+              "rightValue": "notification",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combineOperation": "all"
+        },
+        "options": {}
+      },
+      "id": "8h9i0j1k-2l3m-4n5o-6p7q-r8s9t0u1v2w3",
+      "name": "Is Notification Automation?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1340, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process notification automation\nconst data = $json;\nconst notificationData = data.data;\n\n// Create notification object\nconst notification = {\n  id: data.id,\n  title: notificationData.title || 'Notification',\n  message: notificationData.message || data.description || 'You have a notification',\n  type: notificationData.type || 'info', // info, success, warning, error\n  recipients: data.recipients,\n  channels: notificationData.channels || ['telegram'], // telegram, slack, email\n  urgent: data.priority === 'urgent',\n  category: data.category,\n  tags: data.tags,\n  attachments: notificationData.attachments || [],\n  actionButtons: notificationData.actionButtons || [],\n  createdBy: data.userId,\n  createdAt: data.createdAt,\n  action: data.action\n};\n\n// Generate notification message with appropriate emoji\nlet emoji = '📢';\nswitch (notification.type) {\n  case 'success': emoji = '✅'; break;\n  case 'warning': emoji = '⚠️'; break;\n  case 'error': emoji = '❌'; break;\n  case 'info': emoji = 'ℹ️'; break;\n}\n\nlet message = `${emoji} **${notification.title}**\\n\\n`;\nmessage += `${notification.message}\\n\\n`;\nif (notification.urgent) message += `🚨 **URGENT** 🚨\\n\\n`;\nmessage += `*Sent by: ${data.userId}*`;\n\nreturn {\n  json: {\n    ...data,\n    notification,\n    notificationMessage: message,\n    automationType: 'notification'\n  }\n};"
+      },
+      "id": "9i0j1k2l-3m4n-5o6p-7q8r-s9t0u1v2w3x4",
+      "name": "Process Notification Automation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process other automation types (data-sync, report, etc.)\nconst data = $json;\n\n// Create generic automation object\nconst automation = {\n  id: data.id,\n  type: data.type,\n  action: data.action,\n  data: data.data,\n  settings: data.settings,\n  recipients: data.recipients,\n  category: data.category,\n  tags: data.tags,\n  priority: data.priority,\n  createdBy: data.userId,\n  createdAt: data.createdAt\n};\n\n// Generate generic notification message\nlet message = `🔧 **Automation Triggered**\\n\\n`;\nmessage += `**Type:** ${data.type}\\n`;\nmessage += `**Action:** ${data.action}\\n`;\nmessage += `**Category:** ${data.category}\\n`;\nmessage += `**Priority:** ${data.priority}\\n`;\nif (data.description) message += `**Description:** ${data.description}\\n`;\nmessage += `\\n*Triggered by: ${data.userId}*`;\n\nreturn {\n  json: {\n    ...data,\n    automation,\n    notificationMessage: message,\n    automationType: 'generic'\n  }\n};"
+      },
+      "id": "0j1k2l3m-4n5o-6p7q-8r9s-t0u1v2w3x4y5",
+      "name": "Process Other Automation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 800]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "your-automation-log-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Automation Log"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "automationId": "={{ $json.id }}",
+            "type": "={{ $json.type }}",
+            "action": "={{ $json.action }}",
+            "automationType": "={{ $json.automationType }}",
+            "userId": "={{ $json.userId }}",
+            "source": "={{ $json.source }}",
+            "priority": "={{ $json.priority }}",
+            "category": "={{ $json.category }}",
+            "description": "={{ $json.description }}",
+            "recipients": "={{ $json.recipients.join(', ') }}",
+            "tags": "={{ $json.tags.join(', ') }}",
+            "scheduledTime": "={{ $json.scheduledTime || '' }}",
+            "executedAt": "={{ new Date().toISOString() }}",
+            "status": "executed",
+            "requestId": "={{ $json.executionContext.requestId }}",
+            "data": "={{ JSON.stringify($json.data) }}"
+          },
+          "matchingColumns": [
+            "automationId"
+          ],
+          "schema": [
+            {
+              "id": "automationId",
+              "displayName": "automationId",
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "type",
+              "displayName": "type",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "action",
+              "displayName": "action",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "automationType",
+              "displayName": "automationType",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "userId",
+              "displayName": "userId",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "priority",
+              "displayName": "priority",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "category",
+              "displayName": "category",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "description",
+              "displayName": "description",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "recipients",
+              "displayName": "recipients",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tags",
+              "displayName": "tags",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "scheduledTime",
+              "displayName": "scheduledTime",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "executedAt",
+              "displayName": "executedAt",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "requestId",
+              "displayName": "requestId",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "data",
+              "displayName": "data",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1k2l3m4n-5o6p-7q8r-9s0t-u1v2w3x4y5z6",
+      "name": "Log Automation",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1780, 400],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "your-automation-hub-chat-id",
+        "text": "{{ $json.notificationMessage }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "2l3m4n5o-6p7q-8r9s-0t1u-v2w3x4y5z6a7",
+      "name": "Send Telegram Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [2000, 400],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot-credential",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.priority }}",
+              "rightValue": "urgent",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combineOperation": "all"
+        },
+        "options": {}
+      },
+      "id": "3m4n5o6p-7q8r-9s0t-1u2v-w3x4y5z6a7b8",
+      "name": "Is Urgent?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2220, 400]
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "operation": "postMessage",
+        "channel": "your-urgent-alerts-channel",
+        "text": "🚨 **URGENT AUTOMATION** 🚨\n\n{{ $json.notificationMessage }}\n\n*Request ID: {{ $json.executionContext.requestId }}*",
+        "otherOptions": {
+          "mrkdwn": true
+        }
+      },
+      "id": "4n5o6p7q-8r9s-0t1u-2v3w-x4y5z6a7b8c9",
+      "name": "Send Urgent Slack Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [2440, 300],
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "slack-oauth-credential",
+          "name": "Slack OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "your-automation-hub-chat-id",
+        "text": "❌ **Invalid Automation Request**\n\n**Error:** Missing required fields (type, action)\n**Source:** {{ $json.source || 'unknown' }}\n**User:** {{ $json.userId || 'anonymous' }}\n**Time:** {{ $json.createdAt || new Date().toISOString() }}\n\n*Request ID: {{ $json.executionContext?.requestId || 'unknown' }}*",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "5o6p7q8r-9s0t-1u2v-3w4x-y5z6a7b8c9d0",
+      "name": "Send Error Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [900, 500],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot-credential",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 18 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "6p7q8r9s-0t1u-2v3w-4x5y-z6a7b8c9d0e1",
+      "name": "Weekly Summary Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 900]
+    },
+    {
+      "parameters": {
+        "operation": "readOrSearch",
+        "documentId": {
+          "__rl": true,
+          "value": "your-automation-log-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Automation Log"
+        },
+        "options": {
+          "where": {
+            "values": [
+              {
+                "column": "executedAt",
+                "condition": "dateAfter",
+                "value": "={{ new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString() }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "7q8r9s0t-1u2v-3w4x-5y6z-a7b8c9d0e1f2",
+      "name": "Get Weekly Automations",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [460, 900],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate weekly automation summary\nconst automations = $input.all();\n\nif (!automations || automations.length === 0) {\n  return [{\n    json: {\n      report: 'No automations were executed in the last 7 days.',\n      stats: {\n        total: 0,\n        byType: {},\n        byUser: {},\n        byPriority: {}\n      }\n    }\n  }];\n}\n\n// Calculate statistics\nconst byType = {};\nconst byUser = {};\nconst byPriority = {};\nconst byAction = {};\nconst byDay = {};\n\nautomations.forEach(item => {\n  const auto = item.json;\n  \n  // By type\n  byType[auto.type] = (byType[auto.type] || 0) + 1;\n  \n  // By user\n  byUser[auto.userId] = (byUser[auto.userId] || 0) + 1;\n  \n  // By priority\n  byPriority[auto.priority] = (byPriority[auto.priority] || 0) + 1;\n  \n  // By action\n  byAction[auto.action] = (byAction[auto.action] || 0) + 1;\n  \n  // By day\n  const day = new Date(auto.executedAt).toDateString();\n  byDay[day] = (byDay[day] || 0) + 1;\n});\n\n// Generate report\nlet report = `🤖 **Weekly Automation Hub Summary**\\n`;\nreport += `📅 **Period:** Last 7 days\\n`;\nreport += `⏰ **Generated:** ${new Date().toISOString()}\\n\\n`;\n\nreport += `📊 **Overall Statistics:**\\n`;\nreport += `• Total Automations: ${automations.length}\\n`;\nreport += `• Average per Day: ${Math.round(automations.length / 7 * 100) / 100}\\n\\n`;\n\nif (Object.keys(byType).length > 0) {\n  report += `🔧 **Automation Types:**\\n`;\n  Object.entries(byType).forEach(([type, count]) => {\n    const percentage = Math.round((count / automations.length) * 100);\n    report += `  • ${type}: ${count} (${percentage}%)\\n`;\n  });\n  report += `\\n`;\n}\n\nif (Object.keys(byAction).length > 0) {\n  report += `⚡ **Actions Performed:**\\n`;\n  Object.entries(byAction).forEach(([action, count]) => {\n    const percentage = Math.round((count / automations.length) * 100);\n    report += `  • ${action}: ${count} (${percentage}%)\\n`;\n  });\n  report += `\\n`;\n}\n\nif (Object.keys(byPriority).length > 0) {\n  report += `🎯 **Priority Distribution:**\\n`;\n  Object.entries(byPriority).forEach(([priority, count]) => {\n    const percentage = Math.round((count / automations.length) * 100);\n    let emoji = '📝';\n    if (priority === 'urgent') emoji = '🚨';\n    else if (priority === 'high') emoji = '🔴';\n    else if (priority === 'medium') emoji = '🟡';\n    else if (priority === 'low') emoji = '🟢';\n    report += `  ${emoji} ${priority}: ${count} (${percentage}%)\\n`;\n  });\n  report += `\\n`;\n}\n\nif (Object.keys(byUser).length > 0) {\n  report += `👥 **Most Active Users:**\\n`;\n  const sortedUsers = Object.entries(byUser).sort(([,a], [,b]) => b - a).slice(0, 5);\n  sortedUsers.forEach(([user, count]) => {\n    report += `  • ${user}: ${count} automations\\n`;\n  });\n  report += `\\n`;\n}\n\nif (Object.keys(byDay).length > 0) {\n  report += `📅 **Daily Activity:**\\n`;\n  Object.entries(byDay).forEach(([day, count]) => {\n    report += `  • ${day}: ${count} automations\\n`;\n  });\n  report += `\\n`;\n}\n\nreport += `[📋 View Automation Log](https://docs.google.com/spreadsheets/d/your-automation-log-sheet-id)`;\n\nconst stats = {\n  total: automations.length,\n  averagePerDay: Math.round(automations.length / 7 * 100) / 100,\n  byType,\n  byUser,\n  byPriority,\n  byAction,\n  byDay\n};\n\nreturn [{\n  json: {\n    report,\n    stats,\n    generatedAt: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "8r9s0t1u-2v3w-4x5y-6z7a-b8c9d0e1f2g3",
+      "name": "Generate Weekly Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 900]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "your-automation-hub-chat-id",
+        "text": "{{ $json.report }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "9s0t1u2v-3w4x-5y6z-7a8b-c9d0e1f2g3h4",
+      "name": "Send Weekly Summary",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [900, 900],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot-credential",
+          "name": "Telegram Bot API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Automation Hub Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Automation Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Automation Request": {
+      "main": [
+        [
+          {
+            "node": "Is Valid Request?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Valid Request?": {
+      "main": [
+        [
+          {
+            "node": "Is Task Automation?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Error Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Task Automation?": {
+      "main": [
+        [
+          {
+            "node": "Process Task Automation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Reminder Automation?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Task Automation": {
+      "main": [
+        [
+          {
+            "node": "Log Automation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Reminder Automation?": {
+      "main": [
+        [
+          {
+            "node": "Process Reminder Automation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Notification Automation?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Reminder Automation": {
+      "main": [
+        [
+          {
+            "node": "Log Automation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Notification Automation?": {
+      "main": [
+        [
+          {
+            "node": "Process Notification Automation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Process Other Automation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Notification Automation": {
+      "main": [
+        [
+          {
+            "node": "Log Automation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Other Automation": {
+      "main": [
+        [
+          {
+            "node": "Log Automation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Automation": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Telegram Notification": {
+      "main": [
+        [
+          {
+            "node": "Is Urgent?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Urgent?": {
+      "main": [
+        [
+          {
+            "node": "Send Urgent Slack Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Weekly Summary Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Weekly Automations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Weekly Automations": {
+      "main": [
+        [
+          {
+            "node": "Generate Weekly Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Weekly Summary": {
+      "main": [
+        [
+          {
+            "node": "Send Weekly Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-12-19T10:00:00.000Z",
+      "updatedAt": "2024-12-19T10:00:00.000Z",
+      "id": "productivity-workflow",
+      "name": "Productivity & Workflow"
+    }
+  ],
+  "triggerCount": 2,
+  "updatedAt": "2024-12-19T10:00:00.000Z",
+  "versionId": "1"
+}

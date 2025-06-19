@@ -1,0 +1,640 @@
+{
+  "name": "E-commerce Order Processing",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "order",
+        "options": {}
+      },
+      "id": "order-webhook",
+      "name": "Order Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse and validate order data\nconst data = $input.first().json;\n\n// Validate required fields\nconst requiredFields = ['orderId', 'customerId', 'items', 'totalAmount', 'customerEmail'];\nfor (const field of requiredFields) {\n  if (!data[field]) {\n    throw new Error(`Missing required field: ${field}`);\n  }\n}\n\n// Validate items array\nif (!Array.isArray(data.items) || data.items.length === 0) {\n  throw new Error('Order must contain at least one item');\n}\n\n// Validate each item\ndata.items.forEach((item, index) => {\n  if (!item.productId || !item.quantity || !item.price) {\n    throw new Error(`Item ${index + 1} is missing required fields (productId, quantity, price)`);\n  }\n  if (item.quantity <= 0 || item.price <= 0) {\n    throw new Error(`Item ${index + 1} has invalid quantity or price`);\n  }\n});\n\n// Calculate totals and validate\nconst calculatedTotal = data.items.reduce((sum, item) => sum + (item.quantity * item.price), 0);\nconst totalDifference = Math.abs(calculatedTotal - data.totalAmount);\nif (totalDifference > 0.01) {\n  throw new Error(`Total amount mismatch. Expected: ${calculatedTotal}, Received: ${data.totalAmount}`);\n}\n\n// Structure the order\nconst order = {\n  orderId: data.orderId,\n  customerId: data.customerId,\n  customerEmail: data.customerEmail,\n  customerName: data.customerName || 'Unknown',\n  items: data.items.map(item => ({\n    productId: item.productId,\n    productName: item.productName || `Product ${item.productId}`,\n    quantity: parseInt(item.quantity),\n    price: parseFloat(item.price),\n    subtotal: parseFloat((item.quantity * item.price).toFixed(2))\n  })),\n  totalAmount: parseFloat(data.totalAmount.toFixed(2)),\n  currency: data.currency || 'USD',\n  shippingAddress: data.shippingAddress || {},\n  billingAddress: data.billingAddress || data.shippingAddress || {},\n  paymentMethod: data.paymentMethod || 'unknown',\n  paymentStatus: data.paymentStatus || 'pending',\n  orderStatus: 'received',\n  orderDate: new Date().toISOString(),\n  estimatedDelivery: data.estimatedDelivery,\n  notes: data.notes || '',\n  priority: data.priority || 'normal'\n};\n\n// Determine order priority based on amount and customer\nif (order.totalAmount > 500) {\n  order.priority = 'high';\n} else if (order.totalAmount > 100) {\n  order.priority = 'medium';\n}\n\n// Add VIP customer check\nif (data.customerType === 'vip' || order.totalAmount > 1000) {\n  order.isVip = true;\n  order.priority = 'urgent';\n}\n\nreturn { json: order };"
+      },
+      "id": "parse-order",
+      "name": "Parse Order",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.paymentStatus }}",
+              "rightValue": "paid",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "check-payment-status",
+      "name": "Check Payment Status",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check inventory for all items\nconst order = $input.first().json;\nconst inventoryChecks = [];\nlet allInStock = true;\nlet backorderItems = [];\n\n// Simulate inventory check (in real implementation, this would query your inventory system)\nfor (const item of order.items) {\n  // Mock inventory data\n  const mockInventory = {\n    [item.productId]: Math.floor(Math.random() * 100) + 10 // Random stock between 10-109\n  };\n  \n  const availableStock = mockInventory[item.productId] || 0;\n  const isInStock = availableStock >= item.quantity;\n  \n  if (!isInStock) {\n    allInStock = false;\n    backorderItems.push({\n      ...item,\n      availableStock,\n      shortfall: item.quantity - availableStock\n    });\n  }\n  \n  inventoryChecks.push({\n    productId: item.productId,\n    productName: item.productName,\n    requestedQuantity: item.quantity,\n    availableStock,\n    isInStock,\n    reserved: isInStock ? item.quantity : availableStock\n  });\n}\n\nconst inventoryResult = {\n  ...order,\n  inventoryStatus: allInStock ? 'in_stock' : 'partial_backorder',\n  inventoryChecks,\n  backorderItems,\n  canFulfill: allInStock,\n  requiresBackorder: !allInStock,\n  checkedAt: new Date().toISOString()\n};\n\n// Update order status based on inventory\nif (allInStock) {\n  inventoryResult.orderStatus = 'confirmed';\n} else {\n  inventoryResult.orderStatus = 'pending_inventory';\n}\n\nreturn { json: inventoryResult };"
+      },
+      "id": "check-inventory",
+      "name": "Check Inventory",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "spreadsheet",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms",
+          "mode": "list",
+          "cachedResultName": "Orders Database"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Orders"
+        },
+        "columnToMatchOn": "orderId",
+        "valueInputMode": "defineBelow",
+        "fieldsUi": {
+          "values": [
+            {
+              "fieldId": "orderId",
+              "fieldValue": "={{ $json.orderId }}"
+            },
+            {
+              "fieldId": "customerId",
+              "fieldValue": "={{ $json.customerId }}"
+            },
+            {
+              "fieldId": "customerEmail",
+              "fieldValue": "={{ $json.customerEmail }}"
+            },
+            {
+              "fieldId": "customerName",
+              "fieldValue": "={{ $json.customerName }}"
+            },
+            {
+              "fieldId": "totalAmount",
+              "fieldValue": "={{ $json.totalAmount }}"
+            },
+            {
+              "fieldId": "currency",
+              "fieldValue": "={{ $json.currency }}"
+            },
+            {
+              "fieldId": "itemCount",
+              "fieldValue": "={{ $json.items.length }}"
+            },
+            {
+              "fieldId": "paymentStatus",
+              "fieldValue": "={{ $json.paymentStatus }}"
+            },
+            {
+              "fieldId": "orderStatus",
+              "fieldValue": "={{ $json.orderStatus }}"
+            },
+            {
+              "fieldId": "inventoryStatus",
+              "fieldValue": "={{ $json.inventoryStatus }}"
+            },
+            {
+              "fieldId": "priority",
+              "fieldValue": "={{ $json.priority }}"
+            },
+            {
+              "fieldId": "isVip",
+              "fieldValue": "={{ $json.isVip || false }}"
+            },
+            {
+              "fieldId": "orderDate",
+              "fieldValue": "={{ $json.orderDate }}"
+            },
+            {
+              "fieldId": "estimatedDelivery",
+              "fieldValue": "={{ $json.estimatedDelivery || '' }}"
+            },
+            {
+              "fieldId": "shippingAddress",
+              "fieldValue": "={{ JSON.stringify($json.shippingAddress) }}"
+            },
+            {
+              "fieldId": "items",
+              "fieldValue": "={{ JSON.stringify($json.items) }}"
+            },
+            {
+              "fieldId": "notes",
+              "fieldValue": "={{ $json.notes }}"
+            }
+          ]
+        }
+      },
+      "id": "save-order",
+      "name": "Save Order",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.canFulfill }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "check-fulfillment",
+      "name": "Check Fulfillment",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "options": {
+          "temperature": 0.7
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a customer service representative for an e-commerce company. Create a professional and friendly order confirmation email. Include all relevant order details and make the customer feel valued."
+            },
+            {
+              "role": "user",
+              "content": "Create an order confirmation email for:\n\nOrder ID: {{ $json.orderId }}\nCustomer: {{ $json.customerName }}\nTotal: {{ $json.currency }} {{ $json.totalAmount }}\nItems: {{ $json.items.length }}\nStatus: {{ $json.orderStatus }}\nEstimated Delivery: {{ $json.estimatedDelivery || 'TBD' }}\n\nItems:\n{{ $json.items.map(item => `- ${item.productName} (Qty: ${item.quantity}) - ${$json.currency} ${item.subtotal}`).join('\\n') }}\n\nShipping Address:\n{{ JSON.stringify($json.shippingAddress) }}\n\nPlease create a warm, professional email that confirms the order and provides next steps."
+            }
+          ]
+        }
+      },
+      "id": "generate-confirmation-email",
+      "name": "Generate Confirmation Email",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1,
+      "position": [1560, 200]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "sendTo": "={{ $json.customerEmail }}",
+        "subject": "Order Confirmation - {{ $json.orderId }}",
+        "emailType": "html",
+        "message": "{{ $('Generate Confirmation Email').first().json.choices[0].message.content.replace(/\\n/g, '<br>') }}"
+      },
+      "id": "send-confirmation-email",
+      "name": "Send Confirmation Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1780, 200]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "options": {
+          "temperature": 0.7
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a customer service representative. Create a professional email explaining that some items are on backorder and provide alternative solutions."
+            },
+            {
+              "role": "user",
+              "content": "Create a backorder notification email for:\n\nOrder ID: {{ $json.orderId }}\nCustomer: {{ $json.customerName }}\nTotal: {{ $json.currency }} {{ $json.totalAmount }}\n\nBackorder Items:\n{{ $json.backorderItems.map(item => `- ${item.productName} (Requested: ${item.quantity}, Available: ${item.availableStock}, Shortfall: ${item.shortfall})`).join('\\n') }}\n\nAvailable Items:\n{{ $json.inventoryChecks.filter(check => check.isInStock).map(item => `- ${item.productName} (Qty: ${item.requestedQuantity})`).join('\\n') }}\n\nPlease create an apologetic but solution-focused email that explains the situation and offers options."
+            }
+          ]
+        }
+      },
+      "id": "generate-backorder-email",
+      "name": "Generate Backorder Email",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1,
+      "position": [1560, 400]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "sendTo": "={{ $json.customerEmail }}",
+        "subject": "Important Update - Order {{ $json.orderId }} Backorder Notice",
+        "emailType": "html",
+        "message": "{{ $('Generate Backorder Email').first().json.choices[0].message.content.replace(/\\n/g, '<br>') }}"
+      },
+      "id": "send-backorder-email",
+      "name": "Send Backorder Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1780, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.priority }}",
+              "rightValue": "urgent",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        }
+      },
+      "id": "check-priority",
+      "name": "Check Priority",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2000, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "accessToken",
+        "chatId": "-1001234567890",
+        "text": "🚨 *URGENT ORDER ALERT*\n\n📦 *Order ID:* {{ $json.orderId }}\n👤 *Customer:* {{ $json.customerName }}\n💰 *Amount:* {{ $json.currency }} {{ $json.totalAmount }}\n⭐ *VIP Customer:* {{ $json.isVip ? 'Yes' : 'No' }}\n📊 *Status:* {{ $json.orderStatus }}\n📦 *Inventory:* {{ $json.inventoryStatus }}\n\n📋 *Items ({{ $json.items.length }}):*\n{{ $json.items.map(item => `• ${item.productName} x${item.quantity} - ${$json.currency}${item.subtotal}`).join('\\n') }}\n\n⚡ *Immediate attention required!*",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "urgent-order-alert",
+      "name": "Urgent Order Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [2220, 200]
+    },
+    {
+      "parameters": {
+        "authentication": "accessToken",
+        "chatId": "-1001234567890",
+        "text": "📦 *New Order Received*\n\n🆔 *Order ID:* {{ $json.orderId }}\n👤 *Customer:* {{ $json.customerName }}\n💰 *Amount:* {{ $json.currency }} {{ $json.totalAmount }}\n🏷️ *Priority:* {{ $json.priority }}\n📊 *Status:* {{ $json.orderStatus }}\n📦 *Inventory:* {{ $json.inventoryStatus }}\n\n📋 *Items ({{ $json.items.length }}):*\n{{ $json.items.slice(0, 3).map(item => `• ${item.productName} x${item.quantity}`).join('\\n') }}{{ $json.items.length > 3 ? '\\n• ... and ' + ($json.items.length - 3) + ' more items' : '' }}\n\n{{ $json.requiresBackorder ? '⚠️ Some items on backorder' : '✅ All items in stock' }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "order-notification",
+      "name": "Order Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [2220, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"orderId\": \"{{ $json.orderId }}\",\n  \"status\": \"{{ $json.orderStatus }}\",\n  \"inventoryStatus\": \"{{ $json.inventoryStatus }}\",\n  \"canFulfill\": {{ $json.canFulfill }},\n  \"totalAmount\": {{ $json.totalAmount }},\n  \"currency\": \"{{ $json.currency }}\",\n  \"estimatedDelivery\": \"{{ $json.estimatedDelivery || 'TBD' }}\",\n  \"message\": \"Order processed successfully\",\n  \"timestamp\": \"{{ $json.orderDate }}\"\n}"
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2440, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "sendTo": "{{ $vars.PAYMENT_TEAM_EMAIL || 'payments@company.com' }}",
+        "subject": "Payment Required - Order {{ $json.orderId }}",
+        "emailType": "html",
+        "message": "<h2>Payment Pending Notification</h2>\n<p>The following order requires payment processing:</p>\n\n<ul>\n<li><strong>Order ID:</strong> {{ $json.orderId }}</li>\n<li><strong>Customer:</strong> {{ $json.customerName }} ({{ $json.customerEmail }})</li>\n<li><strong>Amount:</strong> {{ $json.currency }} {{ $json.totalAmount }}</li>\n<li><strong>Payment Method:</strong> {{ $json.paymentMethod }}</li>\n<li><strong>Payment Status:</strong> {{ $json.paymentStatus }}</li>\n<li><strong>Order Date:</strong> {{ $json.orderDate }}</li>\n</ul>\n\n<h3>Items:</h3>\n<ul>\n{{ $json.items.map(item => `<li>${item.productName} x${item.quantity} - ${$json.currency} ${item.subtotal}</li>`).join('') }}\n</ul>\n\n<p><strong>Action Required:</strong> Please follow up on payment processing for this order.</p>"
+      },
+      "id": "payment-pending-notification",
+      "name": "Payment Pending Notification",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 17 * * *"
+            }
+          ]
+        }
+      },
+      "id": "daily-summary-trigger",
+      "name": "Daily Summary Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 600]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "spreadsheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms",
+          "mode": "list",
+          "cachedResultName": "Orders Database"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Orders"
+        },
+        "options": {
+          "range": "A:Q"
+        }
+      },
+      "id": "get-daily-orders",
+      "name": "Get Daily Orders",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [460, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate daily order summary\nconst orders = $input.all();\nconst today = new Date().toISOString().split('T')[0];\n\n// Filter today's orders\nconst todayOrders = orders.filter(order => {\n  const orderDate = order.json.orderDate ? order.json.orderDate.split('T')[0] : '';\n  return orderDate === today;\n});\n\nconst summary = {\n  date: today,\n  totalOrders: todayOrders.length,\n  totalRevenue: 0,\n  averageOrderValue: 0,\n  statusBreakdown: {},\n  priorityBreakdown: {},\n  paymentStatusBreakdown: {},\n  inventoryIssues: 0,\n  vipOrders: 0,\n  topProducts: {},\n  currencyBreakdown: {}\n};\n\nif (todayOrders.length > 0) {\n  // Calculate metrics\n  todayOrders.forEach(order => {\n    const amount = parseFloat(order.json.totalAmount) || 0;\n    summary.totalRevenue += amount;\n    \n    // Status breakdown\n    const status = order.json.orderStatus || 'unknown';\n    summary.statusBreakdown[status] = (summary.statusBreakdown[status] || 0) + 1;\n    \n    // Priority breakdown\n    const priority = order.json.priority || 'normal';\n    summary.priorityBreakdown[priority] = (summary.priorityBreakdown[priority] || 0) + 1;\n    \n    // Payment status breakdown\n    const paymentStatus = order.json.paymentStatus || 'unknown';\n    summary.paymentStatusBreakdown[paymentStatus] = (summary.paymentStatusBreakdown[paymentStatus] || 0) + 1;\n    \n    // Currency breakdown\n    const currency = order.json.currency || 'USD';\n    summary.currencyBreakdown[currency] = (summary.currencyBreakdown[currency] || 0) + amount;\n    \n    // Inventory issues\n    if (order.json.inventoryStatus === 'partial_backorder') {\n      summary.inventoryIssues++;\n    }\n    \n    // VIP orders\n    if (order.json.isVip === 'true' || order.json.isVip === true) {\n      summary.vipOrders++;\n    }\n    \n    // Top products (parse items if they're stored as JSON string)\n    try {\n      const items = typeof order.json.items === 'string' ? JSON.parse(order.json.items) : order.json.items;\n      if (Array.isArray(items)) {\n        items.forEach(item => {\n          const productName = item.productName || item.productId;\n          summary.topProducts[productName] = (summary.topProducts[productName] || 0) + item.quantity;\n        });\n      }\n    } catch (e) {\n      // Skip if items can't be parsed\n    }\n  });\n  \n  summary.averageOrderValue = Math.round((summary.totalRevenue / todayOrders.length) * 100) / 100;\n}\n\n// Get top 5 products\nconst topProductsList = Object.entries(summary.topProducts)\n  .sort(([,a], [,b]) => b - a)\n  .slice(0, 5)\n  .map(([product, quantity]) => ({ product, quantity }));\n\nsummary.topProductsList = topProductsList;\n\nreturn { json: summary };"
+      },
+      "id": "generate-daily-summary",
+      "name": "Generate Daily Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 600]
+    },
+    {
+      "parameters": {
+        "authentication": "accessToken",
+        "chatId": "-1001234567890",
+        "text": "📊 *Daily Order Summary - {{ $json.date }}*\n\n📦 *Orders:* {{ $json.totalOrders }}\n💰 *Revenue:* ${{ $json.totalRevenue.toFixed(2) }}\n📈 *Avg Order Value:* ${{ $json.averageOrderValue }}\n⭐ *VIP Orders:* {{ $json.vipOrders }}\n⚠️ *Inventory Issues:* {{ $json.inventoryIssues }}\n\n📊 *Order Status:*\n{{ Object.entries($json.statusBreakdown).map(([status, count]) => `• ${status}: ${count}`).join('\\n') }}\n\n🏷️ *Priority:*\n{{ Object.entries($json.priorityBreakdown).map(([priority, count]) => `• ${priority}: ${count}`).join('\\n') }}\n\n💳 *Payment Status:*\n{{ Object.entries($json.paymentStatusBreakdown).map(([status, count]) => `• ${status}: ${count}`).join('\\n') }}\n\n🔥 *Top Products:*\n{{ $json.topProductsList.map(item => `• ${item.product}: ${item.quantity} sold`).join('\\n') }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "send-daily-summary",
+      "name": "Send Daily Summary",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [900, 600]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Order Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Order": {
+      "main": [
+        [
+          {
+            "node": "Check Payment Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Payment Status": {
+      "main": [
+        [
+          {
+            "node": "Check Inventory",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Payment Pending Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Inventory": {
+      "main": [
+        [
+          {
+            "node": "Save Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Order": {
+      "main": [
+        [
+          {
+            "node": "Check Fulfillment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Fulfillment": {
+      "main": [
+        [
+          {
+            "node": "Generate Confirmation Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate Backorder Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Confirmation Email": {
+      "main": [
+        [
+          {
+            "node": "Send Confirmation Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Confirmation Email": {
+      "main": [
+        [
+          {
+            "node": "Check Priority",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Backorder Email": {
+      "main": [
+        [
+          {
+            "node": "Send Backorder Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Backorder Email": {
+      "main": [
+        [
+          {
+            "node": "Check Priority",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Priority": {
+      "main": [
+        [
+          {
+            "node": "Urgent Order Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Order Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Urgent Order Alert": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Order Notification": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Payment Pending Notification": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily Summary Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Daily Orders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Daily Orders": {
+      "main": [
+        [
+          {
+            "node": "Generate Daily Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Daily Summary": {
+      "main": [
+        [
+          {
+            "node": "Send Daily Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "12345"
+  },
+  "id": "ecommerce-order-processing",
+  "tags": []
+}

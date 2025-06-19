@@ -1,0 +1,265 @@
+{
+  "name": "YouTube Content Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * 1"
+            }
+          ]
+        }
+      },
+      "id": "youtube-schedule-trigger",
+      "name": "Weekly Content Check",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// YouTube content planning and automation\nconst contentIdeas = [\n  'Tutorial: Getting Started with n8n',\n  'Automation Tips for Small Business',\n  'AI Integration Best Practices',\n  'Workflow Optimization Techniques',\n  'No-Code Solutions for Productivity'\n];\n\n// Generate content plan\nconst today = new Date();\nconst weekNumber = Math.ceil((today - new Date(today.getFullYear(), 0, 1)) / (7 * 24 * 60 * 60 * 1000));\nconst selectedIdea = contentIdeas[weekNumber % contentIdeas.length];\n\n// Content metadata\nconst contentPlan = {\n  id: `content_${Date.now()}`,\n  title: selectedIdea,\n  scheduledDate: new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),\n  status: 'planned',\n  category: 'educational',\n  estimatedDuration: '10-15 minutes',\n  tags: ['automation', 'tutorial', 'n8n', 'productivity'],\n  description: `Weekly content focusing on ${selectedIdea.toLowerCase()}`,\n  thumbnail: {\n    style: 'professional',\n    colors: ['blue', 'white'],\n    text: selectedIdea.split(':')[0]\n  },\n  seo: {\n    keywords: selectedIdea.toLowerCase().split(' '),\n    targetAudience: 'automation enthusiasts',\n    competitorAnalysis: 'pending'\n  }\n};\n\nreturn { json: contentPlan };"
+      },
+      "id": "content-planner",
+      "name": "Content Planner",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "prompt": "You are a YouTube content creator assistant. Create a detailed script outline for: {{ $json.title }}\n\nInclude:\n- Hook (first 15 seconds)\n- Main content structure\n- Call-to-action\n- SEO-optimized description\n- Relevant hashtags",
+        "options": {
+          "temperature": 0.7,
+          "maxTokens": 1000
+        }
+      },
+      "id": "script-generator",
+      "name": "AI Script Generator",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process AI-generated script\nconst aiResponse = $json.choices[0].message.content;\nconst originalPlan = $('Content Planner').item(0).json;\n\n// Parse script sections\nconst scriptSections = {\n  hook: aiResponse.match(/Hook[:\\s]*([\\s\\S]*?)(?=Main|$)/i)?.[1]?.trim() || '',\n  mainContent: aiResponse.match(/Main[\\s\\S]*?structure[:\\s]*([\\s\\S]*?)(?=Call-to-action|$)/i)?.[1]?.trim() || '',\n  callToAction: aiResponse.match(/Call-to-action[:\\s]*([\\s\\S]*?)(?=SEO|$)/i)?.[1]?.trim() || '',\n  description: aiResponse.match(/description[:\\s]*([\\s\\S]*?)(?=hashtags|$)/i)?.[1]?.trim() || '',\n  hashtags: aiResponse.match(/hashtags[:\\s]*([\\s\\S]*?)$/i)?.[1]?.trim() || ''\n};\n\n// Enhanced content package\nconst contentPackage = {\n  ...originalPlan,\n  script: scriptSections,\n  aiGenerated: true,\n  readyForProduction: true,\n  estimatedViews: Math.floor(Math.random() * 5000) + 1000,\n  engagementTarget: {\n    likes: '5%',\n    comments: '2%',\n    shares: '1%',\n    subscribers: '0.5%'\n  },\n  productionNotes: [\n    'Record in 4K resolution',\n    'Use consistent branding',\n    'Include captions for accessibility',\n    'Optimize thumbnail for mobile'\n  ]\n};\n\nreturn { json: contentPackage };"
+      },
+      "id": "script-processor",
+      "name": "Script Processor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "resource": "spreadsheet",
+        "operation": "appendOrUpdate",
+        "documentId": "{{ $env.GOOGLE_SHEETS_YOUTUBE_ID }}",
+        "sheetName": "Content Calendar",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ $json.scheduledDate }}",
+            "Title": "={{ $json.title }}",
+            "Status": "={{ $json.status }}",
+            "Category": "={{ $json.category }}",
+            "Duration": "={{ $json.estimatedDuration }}",
+            "Hook": "={{ $json.script.hook }}",
+            "Description": "={{ $json.script.description }}",
+            "Hashtags": "={{ $json.script.hashtags }}",
+            "Estimated Views": "={{ $json.estimatedViews }}",
+            "Production Notes": "={{ $json.productionNotes.join('; ') }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "save-to-sheets",
+      "name": "Save to Content Calendar",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "{{ $env.TELEGRAM_YOUTUBE_CHAT_ID }}",
+        "text": "🎬 *New YouTube Content Planned!*\n\n📅 *Scheduled:* {{ $json.scheduledDate.split('T')[0] }}\n🎯 *Title:* {{ $json.title }}\n⏱️ *Duration:* {{ $json.estimatedDuration }}\n📊 *Est. Views:* {{ $json.estimatedViews }}\n\n🎪 *Hook:*\n{{ $json.script.hook }}\n\n📝 *Description:*\n{{ $json.script.description }}\n\n🏷️ *Hashtags:*\n{{ $json.script.hashtags }}\n\n✅ Ready for production!",
+        "additionalFields": {
+          "parseMode": "Markdown"
+        }
+      },
+      "id": "telegram-notification",
+      "name": "Telegram Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "youtube-upload",
+        "options": {}
+      },
+      "id": "upload-webhook",
+      "name": "Upload Trigger Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 600],
+      "webhookId": "youtube-upload-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process video upload data\nconst uploadData = $json.body;\n\n// Extract video information\nconst videoInfo = {\n  id: uploadData.videoId || `video_${Date.now()}`,\n  title: uploadData.title || '',\n  description: uploadData.description || '',\n  tags: uploadData.tags || [],\n  category: uploadData.category || 'Education',\n  privacy: uploadData.privacy || 'public',\n  thumbnail: uploadData.thumbnail || null,\n  uploadedAt: new Date().toISOString(),\n  fileSize: uploadData.fileSize || 0,\n  duration: uploadData.duration || '00:00:00',\n  resolution: uploadData.resolution || '1080p',\n  status: 'uploaded'\n};\n\n// Auto-generate optimizations\nconst optimizations = {\n  seoScore: Math.floor(Math.random() * 40) + 60, // 60-100\n  thumbnailOptimized: videoInfo.thumbnail ? true : false,\n  descriptionLength: videoInfo.description.length,\n  tagsCount: videoInfo.tags.length,\n  recommendations: []\n};\n\n// Add recommendations\nif (optimizations.descriptionLength < 100) {\n  optimizations.recommendations.push('Expand description for better SEO');\n}\nif (optimizations.tagsCount < 5) {\n  optimizations.recommendations.push('Add more relevant tags');\n}\nif (!optimizations.thumbnailOptimized) {\n  optimizations.recommendations.push('Upload custom thumbnail');\n}\n\nreturn {\n  json: {\n    ...videoInfo,\n    optimizations\n  }\n};"
+      },
+      "id": "upload-processor",
+      "name": "Upload Processor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 600]
+    },
+    {
+      "parameters": {
+        "resource": "spreadsheet",
+        "operation": "appendOrUpdate",
+        "documentId": "{{ $env.GOOGLE_SHEETS_YOUTUBE_ID }}",
+        "sheetName": "Video Analytics",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Video ID": "={{ $json.id }}",
+            "Title": "={{ $json.title }}",
+            "Upload Date": "={{ $json.uploadedAt }}",
+            "Duration": "={{ $json.duration }}",
+            "Resolution": "={{ $json.resolution }}",
+            "File Size": "={{ $json.fileSize }}",
+            "SEO Score": "={{ $json.optimizations.seoScore }}",
+            "Tags Count": "={{ $json.optimizations.tagsCount }}",
+            "Status": "={{ $json.status }}",
+            "Recommendations": "={{ $json.optimizations.recommendations.join('; ') }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "save-analytics",
+      "name": "Save Video Analytics",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [680, 600]
+    },
+    {
+      "parameters": {
+        "chatId": "{{ $env.TELEGRAM_YOUTUBE_CHAT_ID }}",
+        "text": "📹 *Video Uploaded Successfully!*\n\n🎬 *Title:* {{ $json.title }}\n🆔 *Video ID:* {{ $json.id }}\n⏱️ *Duration:* {{ $json.duration }}\n📊 *SEO Score:* {{ $json.optimizations.seoScore }}/100\n\n{{ $json.optimizations.recommendations.length > 0 ? '💡 *Recommendations:*\\n' + $json.optimizations.recommendations.join('\\n• ') : '✅ All optimizations look good!' }}",
+        "additionalFields": {
+          "parseMode": "Markdown"
+        }
+      },
+      "id": "upload-notification",
+      "name": "Upload Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [900, 600]
+    }
+  ],
+  "connections": {
+    "Weekly Content Check": {
+      "main": [
+        [
+          {
+            "node": "Content Planner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Content Planner": {
+      "main": [
+        [
+          {
+            "node": "AI Script Generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Script Generator": {
+      "main": [
+        [
+          {
+            "node": "Script Processor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Script Processor": {
+      "main": [
+        [
+          {
+            "node": "Save to Content Calendar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Content Calendar": {
+      "main": [
+        [
+          {
+            "node": "Telegram Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Trigger Webhook": {
+      "main": [
+        [
+          {
+            "node": "Upload Processor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Processor": {
+      "main": [
+        [
+          {
+            "node": "Save Video Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Video Analytics": {
+      "main": [
+        [
+          {
+            "node": "Upload Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 2,
+  "updatedAt": "2024-01-15T10:00:00.000Z",
+  "versionId": "1"
+}

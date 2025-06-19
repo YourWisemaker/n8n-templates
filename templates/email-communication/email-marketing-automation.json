@@ -1,0 +1,794 @@
+{
+  "name": "Email Marketing Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "email-campaign",
+        "options": {}
+      },
+      "id": "1a2b3c4d-5e6f-7g8h-9i0j-k1l2m3n4o5p6",
+      "name": "Campaign Trigger Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "email-campaign-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse campaign data\nconst payload = $json.body;\n\n// Extract campaign information\nconst campaignData = {\n  id: payload.id || `campaign_${Date.now()}`,\n  name: payload.name || 'Untitled Campaign',\n  type: payload.type || 'newsletter', // newsletter, promotional, welcome, follow-up\n  subject: payload.subject || '',\n  content: payload.content || '',\n  segmentId: payload.segmentId || 'all',\n  scheduledTime: payload.scheduledTime || new Date().toISOString(),\n  timezone: payload.timezone || 'UTC',\n  sendImmediately: payload.sendImmediately || false,\n  personalizeContent: payload.personalizeContent || true,\n  trackOpens: payload.trackOpens !== false,\n  trackClicks: payload.trackClicks !== false,\n  fromName: payload.fromName || 'Your Company',\n  fromEmail: payload.fromEmail || 'noreply@yourcompany.com',\n  replyTo: payload.replyTo || payload.fromEmail || 'noreply@yourcompany.com',\n  tags: payload.tags || [],\n  customFields: payload.customFields || {},\n  testMode: payload.testMode || false,\n  testEmails: payload.testEmails || [],\n  createdAt: new Date().toISOString()\n};\n\n// Validate required fields\nconst isValid = campaignData.name && campaignData.subject && campaignData.content;\n\n// Determine send time\nlet sendTime;\nif (campaignData.sendImmediately) {\n  sendTime = new Date();\n} else {\n  sendTime = new Date(campaignData.scheduledTime);\n}\n\n// Calculate if campaign should be sent now\nconst shouldSendNow = campaignData.sendImmediately || sendTime <= new Date();\n\nreturn {\n  json: {\n    ...campaignData,\n    isValid,\n    sendTime: sendTime.toISOString(),\n    shouldSendNow,\n    campaignId: campaignData.id\n  }\n};"
+      },
+      "id": "2b3c4d5e-6f7g-8h9i-0j1k-l2m3n4o5p6q7",
+      "name": "Parse Campaign Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.isValid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combineOperation": "all"
+        },
+        "options": {}
+      },
+      "id": "3c4d5e6f-7g8h-9i0j-1k2l-m3n4o5p6q7r8",
+      "name": "Is Valid Campaign?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.testMode }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combineOperation": "all"
+        },
+        "options": {}
+      },
+      "id": "4d5e6f7g-8h9i-0j1k-2l3m-n4o5p6q7r8s9",
+      "name": "Is Test Mode?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate test email list\nconst campaignData = $json;\nconst testEmails = campaignData.testEmails || [];\n\n// If no test emails provided, use default\nif (testEmails.length === 0) {\n  testEmails.push('test@yourcompany.com');\n}\n\n// Create subscriber objects for test emails\nconst testSubscribers = testEmails.map((email, index) => ({\n  email: email,\n  firstName: `Test`,\n  lastName: `User ${index + 1}`,\n  fullName: `Test User ${index + 1}`,\n  subscriptionDate: new Date().toISOString(),\n  status: 'active',\n  segment: 'test',\n  customFields: {\n    company: 'Test Company',\n    industry: 'Testing'\n  },\n  isTest: true\n}));\n\nreturn testSubscribers.map(subscriber => ({\n  json: {\n    ...campaignData,\n    subscriber\n  }\n}));"
+      },
+      "id": "5e6f7g8h-9i0j-1k2l-3m4n-o5p6q7r8s9t0",
+      "name": "Generate Test Recipients",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "operation": "readOrSearch",
+        "documentId": {
+          "__rl": true,
+          "value": "your-subscribers-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Subscribers"
+        },
+        "options": {
+          "where": {
+            "values": [
+              {
+                "column": "status",
+                "condition": "equal",
+                "value": "active"
+              },
+              {
+                "column": "segment",
+                "condition": "equal",
+                "value": "={{ $json.segmentId === 'all' ? '' : $json.segmentId }}"
+              }
+            ],
+            "combineOperation": "={{ $json.segmentId === 'all' ? 'any' : 'all' }}"
+          }
+        }
+      },
+      "id": "6f7g8h9i-0j1k-2l3m-4n5o-p6q7r8s9t0u1",
+      "name": "Get Subscribers",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1120, 400],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare subscriber data for email sending\nconst campaignData = $('Parse Campaign Data').item.json;\nconst subscribers = $input.all();\n\nif (!subscribers || subscribers.length === 0) {\n  return [{\n    json: {\n      error: 'No subscribers found for this campaign',\n      campaignId: campaignData.campaignId\n    }\n  }];\n}\n\n// Process each subscriber\nreturn subscribers.map(item => {\n  const subscriber = item.json;\n  \n  return {\n    json: {\n      ...campaignData,\n      subscriber: {\n        email: subscriber.email,\n        firstName: subscriber.firstName || '',\n        lastName: subscriber.lastName || '',\n        fullName: subscriber.fullName || `${subscriber.firstName || ''} ${subscriber.lastName || ''}`.trim() || 'Valued Customer',\n        customFields: subscriber.customFields || {},\n        segment: subscriber.segment || 'general',\n        subscriptionDate: subscriber.subscriptionDate || '',\n        isTest: false\n      }\n    }\n  };\n});"
+      },
+      "id": "7g8h9i0j-1k2l-3m4n-5o6p-q7r8s9t0u1v2",
+      "name": "Prepare Subscriber Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 400]
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "operation": "create",
+        "model": {
+          "__rl": true,
+          "value": "gpt-4",
+          "mode": "list"
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are an email marketing specialist. Personalize the email content for each subscriber based on their information. Maintain the original message intent while making it feel personal and relevant. Replace placeholders with actual data and adjust tone based on subscriber segment."
+            },
+            {
+              "role": "user",
+              "content": "Personalize this email content:\n\nSubject: {{ $json.subject }}\nContent: {{ $json.content }}\n\nFor subscriber:\nName: {{ $json.subscriber.fullName }}\nEmail: {{ $json.subscriber.email }}\nSegment: {{ $json.subscriber.segment }}\nSubscription Date: {{ $json.subscriber.subscriptionDate }}\nCustom Fields: {{ JSON.stringify($json.subscriber.customFields) }}\n\nCampaign Type: {{ $json.type }}\n\nPersonalize the content while keeping the core message. Replace any placeholders like [Name], [Company], etc. with actual data."
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.7,
+          "maxTokens": 1000
+        }
+      },
+      "id": "8h9i0j1k-2l3m-4n5o-6p7q-r8s9t0u1v2w3",
+      "name": "Personalize Content",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [1560, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.personalizeContent }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combineOperation": "all"
+        },
+        "options": {}
+      },
+      "id": "9i0j1k2l-3m4n-5o6p-7q8r-s9t0u1v2w3x4",
+      "name": "Should Personalize?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Use original content without AI personalization\nconst data = $json;\n\n// Simple placeholder replacement\nlet personalizedContent = data.content;\nlet personalizedSubject = data.subject;\n\n// Replace common placeholders\nconst replacements = {\n  '[Name]': data.subscriber.fullName,\n  '[FirstName]': data.subscriber.firstName || data.subscriber.fullName.split(' ')[0] || 'there',\n  '[LastName]': data.subscriber.lastName || '',\n  '[Email]': data.subscriber.email,\n  '[Company]': data.subscriber.customFields?.company || '',\n  '[Segment]': data.subscriber.segment || ''\n};\n\nObject.entries(replacements).forEach(([placeholder, value]) => {\n  const regex = new RegExp(placeholder.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&'), 'gi');\n  personalizedContent = personalizedContent.replace(regex, value);\n  personalizedSubject = personalizedSubject.replace(regex, value);\n});\n\nreturn {\n  json: {\n    ...data,\n    personalizedContent,\n    personalizedSubject\n  }\n};"
+      },
+      "id": "0j1k2l3m-4n5o-6p7q-8r9s-t0u1v2w3x4y5",
+      "name": "Simple Personalization",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process AI-personalized content\nconst data = $json;\nconst aiResponse = $('Personalize Content').item.json;\n\nreturn {\n  json: {\n    ...data,\n    personalizedContent: aiResponse.choices[0].message.content,\n    personalizedSubject: data.subject // Keep original subject or extract from AI response if needed\n  }\n};"
+      },
+      "id": "1k2l3m4n-5o6p-7q8r-9s0t-u1v2w3x4y5z6",
+      "name": "Process AI Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1780, 300]
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "message": {
+          "to": "={{ $json.subscriber.email }}",
+          "subject": "={{ $json.personalizedSubject || $json.subject }}",
+          "body": "={{ $json.personalizedContent || $json.content }}",
+          "options": {
+            "bodyType": "html",
+            "replyTo": "={{ $json.replyTo }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "2l3m4n5o-6p7q-8r9s-0t1u-v2w3x4y5z6a7",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [2000, 300],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-oauth-credential",
+          "name": "Gmail OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "your-email-analytics-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Email Logs"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "campaignId": "={{ $json.campaignId }}",
+            "campaignName": "={{ $json.name }}",
+            "campaignType": "={{ $json.type }}",
+            "recipientEmail": "={{ $json.subscriber.email }}",
+            "recipientName": "={{ $json.subscriber.fullName }}",
+            "segment": "={{ $json.subscriber.segment }}",
+            "subject": "={{ $json.personalizedSubject || $json.subject }}",
+            "sentAt": "={{ new Date().toISOString() }}",
+            "status": "sent",
+            "isTest": "={{ $json.subscriber.isTest || false }}",
+            "fromEmail": "={{ $json.fromEmail }}",
+            "tags": "={{ $json.tags.join(', ') }}"
+          },
+          "matchingColumns": [
+            "campaignId",
+            "recipientEmail"
+          ],
+          "schema": [
+            {
+              "id": "campaignId",
+              "displayName": "campaignId",
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "campaignName",
+              "displayName": "campaignName",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "campaignType",
+              "displayName": "campaignType",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "recipientEmail",
+              "displayName": "recipientEmail",
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "recipientName",
+              "displayName": "recipientName",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "segment",
+              "displayName": "segment",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "subject",
+              "displayName": "subject",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "sentAt",
+              "displayName": "sentAt",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "isTest",
+              "displayName": "isTest",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fromEmail",
+              "displayName": "fromEmail",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tags",
+              "displayName": "tags",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3m4n5o6p-7q8r-9s0t-1u2v-w3x4y5z6a7b8",
+      "name": "Log Email Sent",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [2220, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 */6 * * *"
+            }
+          ]
+        }
+      },
+      "id": "4n5o6p7q-8r9s-0t1u-2v3w-x4y5z6a7b8c9",
+      "name": "Campaign Analytics Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 700]
+    },
+    {
+      "parameters": {
+        "operation": "readOrSearch",
+        "documentId": {
+          "__rl": true,
+          "value": "your-email-analytics-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Email Logs"
+        },
+        "options": {
+          "where": {
+            "values": [
+              {
+                "column": "sentAt",
+                "condition": "dateAfter",
+                "value": "={{ new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "5o6p7q8r-9s0t-1u2v-3w4x-y5z6a7b8c9d0",
+      "name": "Get Recent Campaigns",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [460, 700],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate email campaign analytics report\nconst emailLogs = $input.all();\n\nif (!emailLogs || emailLogs.length === 0) {\n  return [{\n    json: {\n      report: 'No email campaigns found in the last 24 hours.',\n      analytics: {\n        totalEmails: 0,\n        campaigns: 0,\n        testEmails: 0,\n        productionEmails: 0\n      }\n    }\n  }];\n}\n\n// Group by campaign\nconst campaignGroups = {};\nemailLogs.forEach(item => {\n  const log = item.json;\n  const campaignId = log.campaignId;\n  \n  if (!campaignGroups[campaignId]) {\n    campaignGroups[campaignId] = {\n      campaignId,\n      campaignName: log.campaignName,\n      campaignType: log.campaignType,\n      emails: [],\n      totalSent: 0,\n      testEmails: 0,\n      productionEmails: 0,\n      segments: new Set(),\n      firstSent: log.sentAt,\n      lastSent: log.sentAt\n    };\n  }\n  \n  const campaign = campaignGroups[campaignId];\n  campaign.emails.push(log);\n  campaign.totalSent++;\n  \n  if (log.isTest === 'true' || log.isTest === true) {\n    campaign.testEmails++;\n  } else {\n    campaign.productionEmails++;\n  }\n  \n  campaign.segments.add(log.segment);\n  \n  if (new Date(log.sentAt) < new Date(campaign.firstSent)) {\n    campaign.firstSent = log.sentAt;\n  }\n  if (new Date(log.sentAt) > new Date(campaign.lastSent)) {\n    campaign.lastSent = log.sentAt;\n  }\n});\n\n// Calculate overall statistics\nconst totalEmails = emailLogs.length;\nconst totalCampaigns = Object.keys(campaignGroups).length;\nconst totalTestEmails = emailLogs.filter(item => item.json.isTest === 'true' || item.json.isTest === true).length;\nconst totalProductionEmails = totalEmails - totalTestEmails;\n\n// Generate report\nlet report = `📧 **Email Campaign Analytics Report**\\n`;\nreport += `📅 **Period:** Last 24 hours\\n`;\nreport += `⏰ **Generated:** ${new Date().toISOString()}\\n\\n`;\n\nreport += `📊 **Overall Statistics:**\\n`;\nreport += `• Total Emails Sent: ${totalEmails}\\n`;\nreport += `• Active Campaigns: ${totalCampaigns}\\n`;\nreport += `• Production Emails: ${totalProductionEmails}\\n`;\nreport += `• Test Emails: ${totalTestEmails}\\n\\n`;\n\nif (totalCampaigns > 0) {\n  report += `📋 **Campaign Details:**\\n`;\n  \n  Object.values(campaignGroups).forEach(campaign => {\n    const duration = new Date(campaign.lastSent) - new Date(campaign.firstSent);\n    const durationMinutes = Math.round(duration / (1000 * 60));\n    \n    report += `\\n📨 **${campaign.campaignName}**\\n`;\n    report += `  • Type: ${campaign.campaignType}\\n`;\n    report += `  • Total Sent: ${campaign.totalSent}\\n`;\n    report += `  • Production: ${campaign.productionEmails}\\n`;\n    report += `  • Test: ${campaign.testEmails}\\n`;\n    report += `  • Segments: ${Array.from(campaign.segments).join(', ')}\\n`;\n    report += `  • Duration: ${durationMinutes} minutes\\n`;\n    report += `  • Started: ${new Date(campaign.firstSent).toLocaleString()}\\n`;\n  });\n}\n\n// Segment analysis\nconst segmentStats = {};\nemailLogs.forEach(item => {\n  const segment = item.json.segment || 'unknown';\n  segmentStats[segment] = (segmentStats[segment] || 0) + 1;\n});\n\nif (Object.keys(segmentStats).length > 0) {\n  report += `\\n🎯 **Segment Performance:**\\n`;\n  Object.entries(segmentStats).forEach(([segment, count]) => {\n    const percentage = Math.round((count / totalEmails) * 100);\n    report += `  • ${segment}: ${count} emails (${percentage}%)\\n`;\n  });\n}\n\nreport += `\\n[📊 View Analytics Dashboard](https://docs.google.com/spreadsheets/d/your-email-analytics-sheet-id)`;\n\nconst analytics = {\n  totalEmails,\n  campaigns: totalCampaigns,\n  testEmails: totalTestEmails,\n  productionEmails: totalProductionEmails,\n  campaignDetails: Object.values(campaignGroups),\n  segmentStats\n};\n\nreturn [{\n  json: {\n    report,\n    analytics,\n    generatedAt: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "6p7q8r9s-0t1u-2v3w-4x5y-z6a7b8c9d0e1",
+      "name": "Generate Analytics Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 700]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "your-marketing-team-chat-id",
+        "text": "{{ $json.report }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "7q8r9s0t-1u2v-3w4x-5y6z-a7b8c9d0e1f2",
+      "name": "Send Analytics Report",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [900, 700],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot-credential",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 2 * * 0"
+            }
+          ]
+        }
+      },
+      "id": "8r9s0t1u-2v3w-4x5y-6z7a-b8c9d0e1f2g3",
+      "name": "Weekly Cleanup Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 900]
+    },
+    {
+      "parameters": {
+        "operation": "readOrSearch",
+        "documentId": {
+          "__rl": true,
+          "value": "your-email-analytics-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Email Logs"
+        },
+        "options": {
+          "where": {
+            "values": [
+              {
+                "column": "sentAt",
+                "condition": "dateBefore",
+                "value": "={{ new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString() }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "9s0t1u2v-3w4x-5y6z-7a8b-c9d0e1f2g3h4",
+      "name": "Get Old Email Logs",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [460, 900],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "deleteRows",
+        "documentId": {
+          "__rl": true,
+          "value": "your-email-analytics-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Email Logs"
+        },
+        "options": {
+          "where": {
+            "values": [
+              {
+                "column": "sentAt",
+                "condition": "dateBefore",
+                "value": "={{ new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString() }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "0t1u2v3w-4x5y-6z7a-8b9c-d0e1f2g3h4i5",
+      "name": "Cleanup Old Logs",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [680, 900],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Campaign Trigger Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Campaign Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Campaign Data": {
+      "main": [
+        [
+          {
+            "node": "Is Valid Campaign?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Valid Campaign?": {
+      "main": [
+        [
+          {
+            "node": "Is Test Mode?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Test Mode?": {
+      "main": [
+        [
+          {
+            "node": "Generate Test Recipients",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Subscribers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Test Recipients": {
+      "main": [
+        [
+          {
+            "node": "Should Personalize?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Subscribers": {
+      "main": [
+        [
+          {
+            "node": "Prepare Subscriber Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Subscriber Data": {
+      "main": [
+        [
+          {
+            "node": "Should Personalize?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Personalize?": {
+      "main": [
+        [
+          {
+            "node": "Personalize Content",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Simple Personalization",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Personalize Content": {
+      "main": [
+        [
+          {
+            "node": "Process AI Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Personalization": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process AI Content": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email": {
+      "main": [
+        [
+          {
+            "node": "Log Email Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Campaign Analytics Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Recent Campaigns",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Recent Campaigns": {
+      "main": [
+        [
+          {
+            "node": "Generate Analytics Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Analytics Report": {
+      "main": [
+        [
+          {
+            "node": "Send Analytics Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Weekly Cleanup Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Old Email Logs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Old Email Logs": {
+      "main": [
+        [
+          {
+            "node": "Cleanup Old Logs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-12-19T10:00:00.000Z",
+      "updatedAt": "2024-12-19T10:00:00.000Z",
+      "id": "email-communication",
+      "name": "Email & Communication"
+    }
+  ],
+  "triggerCount": 3,
+  "updatedAt": "2024-12-19T10:00:00.000Z",
+  "versionId": "1"
+}

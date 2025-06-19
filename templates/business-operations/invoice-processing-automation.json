@@ -1,0 +1,574 @@
+{
+  "name": "Invoice Processing Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "filters": {
+          "subject": "Invoice",
+          "includeSpamTrash": false
+        },
+        "format": "resolved",
+        "options": {
+          "allowUnauthorizedCerts": false,
+          "attachments": true
+        }
+      },
+      "id": "1a2b3c4d-5e6f-7g8h-9i0j-k1l2m3n4o5p6",
+      "name": "Gmail Invoice Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-oauth-credential",
+          "name": "Gmail OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filter and validate invoice emails\nconst emailData = $json;\n\n// Check if email contains invoice-related keywords\nconst invoiceKeywords = ['invoice', 'bill', 'receipt', 'payment due', 'statement'];\nconst subject = (emailData.subject || '').toLowerCase();\nconst snippet = (emailData.snippet || '').toLowerCase();\n\nconst isInvoiceEmail = invoiceKeywords.some(keyword => \n  subject.includes(keyword) || snippet.includes(keyword)\n);\n\n// Check for PDF attachments\nconst pdfAttachments = (emailData.attachments || []).filter(attachment => \n  attachment.name.toLowerCase().endsWith('.pdf')\n);\n\n// Extract sender information\nconst senderEmail = emailData.from?.value?.[0]?.address || emailData.from;\nconst senderName = emailData.from?.value?.[0]?.name || 'Unknown';\n\n// Determine if this is a valid invoice email\nconst isValidInvoice = isInvoiceEmail && pdfAttachments.length > 0;\n\nreturn {\n  json: {\n    ...emailData,\n    isValidInvoice,\n    senderEmail,\n    senderName,\n    pdfAttachments,\n    invoiceKeywordsFound: invoiceKeywords.filter(keyword => \n      subject.includes(keyword) || snippet.includes(keyword)\n    ),\n    processedAt: new Date().toISOString()\n  }\n};"
+      },
+      "id": "2b3c4d5e-6f7g-8h9i-0j1k-l2m3n4o5p6q7",
+      "name": "Validate Invoice Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.isValidInvoice }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combineOperation": "all"
+        },
+        "options": {}
+      },
+      "id": "3c4d5e6f-7g8h-9i0j-1k2l-m3n4o5p6q7r8",
+      "name": "Is Valid Invoice?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process each PDF attachment\nconst emailData = $json;\nconst attachments = emailData.pdfAttachments || [];\n\nreturn attachments.map((attachment, index) => ({\n  json: {\n    ...emailData,\n    currentAttachment: attachment,\n    attachmentIndex: index,\n    attachmentId: `${emailData.id}_${index}`,\n    attachmentName: attachment.name\n  }\n}));"
+      },
+      "id": "4d5e6f7g-8h9i-0j1k-2l3m-n4o5p6q7r8s9",
+      "name": "Process Attachments",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "upload",
+        "name": "={{ $json.attachmentName }}",
+        "binaryData": true,
+        "binaryPropertyName": "={{ $json.currentAttachment.name }}",
+        "options": {
+          "parents": {
+            "parentIds": [
+              "your-invoices-folder-id"
+            ]
+          }
+        }
+      },
+      "id": "5e6f7g8h-9i0j-1k2l-3m4n-o5p6q7r8s9t0",
+      "name": "Upload to Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [1120, 300],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "google-drive-credential",
+          "name": "Google Drive OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "operation": "create",
+        "model": {
+          "__rl": true,
+          "value": "gpt-4",
+          "mode": "list"
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are an AI assistant specialized in extracting invoice data. Analyze the provided invoice text and extract key information in JSON format. Return ONLY valid JSON with these fields: {\"invoiceNumber\": \"\", \"date\": \"YYYY-MM-DD\", \"dueDate\": \"YYYY-MM-DD\", \"vendor\": \"\", \"vendorEmail\": \"\", \"amount\": 0.00, \"currency\": \"\", \"taxAmount\": 0.00, \"description\": \"\", \"category\": \"\", \"paymentTerms\": \"\"}. If a field is not found, use null or empty string."
+            },
+            {
+              "role": "user",
+              "content": "Extract invoice data from this email:\n\nSubject: {{ $json.subject }}\nFrom: {{ $json.senderName }} <{{ $json.senderEmail }}>\nContent: {{ $json.snippet }}\n\nAttachment: {{ $json.attachmentName }}"
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.1,
+          "maxTokens": 1000
+        }
+      },
+      "id": "6f7g8h9i-0j1k-2l3m-4n5o-p6q7r8s9t0u1",
+      "name": "Extract Invoice Data",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [1340, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse and validate extracted invoice data\nconst emailData = $json;\nconst aiResponse = $('Extract Invoice Data').item.json;\n\nlet extractedData = {};\ntry {\n  // Parse AI response\n  const aiContent = aiResponse.choices[0].message.content;\n  extractedData = JSON.parse(aiContent);\n} catch (error) {\n  // Fallback extraction from email data\n  extractedData = {\n    invoiceNumber: null,\n    date: null,\n    dueDate: null,\n    vendor: emailData.senderName,\n    vendorEmail: emailData.senderEmail,\n    amount: null,\n    currency: 'USD',\n    taxAmount: null,\n    description: emailData.subject,\n    category: 'General',\n    paymentTerms: null\n  };\n}\n\n// Validate and clean data\nconst cleanedData = {\n  invoiceNumber: extractedData.invoiceNumber || `AUTO_${Date.now()}`,\n  date: extractedData.date || new Date().toISOString().split('T')[0],\n  dueDate: extractedData.dueDate || null,\n  vendor: extractedData.vendor || emailData.senderName,\n  vendorEmail: extractedData.vendorEmail || emailData.senderEmail,\n  amount: parseFloat(extractedData.amount) || 0,\n  currency: extractedData.currency || 'USD',\n  taxAmount: parseFloat(extractedData.taxAmount) || 0,\n  description: extractedData.description || emailData.subject,\n  category: extractedData.category || 'General',\n  paymentTerms: extractedData.paymentTerms || null,\n  status: 'Pending',\n  emailId: emailData.id,\n  attachmentName: emailData.attachmentName,\n  driveFileId: $('Upload to Drive').item.json.id,\n  driveFileUrl: $('Upload to Drive').item.json.webViewLink,\n  processedAt: new Date().toISOString(),\n  extractionMethod: extractedData.invoiceNumber ? 'AI' : 'Fallback'\n};\n\n// Calculate total amount\ncleanedData.totalAmount = cleanedData.amount + cleanedData.taxAmount;\n\n// Determine priority based on amount\nif (cleanedData.totalAmount > 10000) {\n  cleanedData.priority = 'High';\n} else if (cleanedData.totalAmount > 1000) {\n  cleanedData.priority = 'Medium';\n} else {\n  cleanedData.priority = 'Low';\n}\n\n// Calculate days until due\nif (cleanedData.dueDate) {\n  const dueDate = new Date(cleanedData.dueDate);\n  const today = new Date();\n  const diffTime = dueDate - today;\n  cleanedData.daysUntilDue = Math.ceil(diffTime / (1000 * 60 * 60 * 24));\n  \n  if (cleanedData.daysUntilDue < 0) {\n    cleanedData.status = 'Overdue';\n  } else if (cleanedData.daysUntilDue <= 7) {\n    cleanedData.status = 'Due Soon';\n  }\n} else {\n  cleanedData.daysUntilDue = null;\n}\n\nreturn { json: cleanedData };"
+      },
+      "id": "7g8h9i0j-1k2l-3m4n-5o6p-q7r8s9t0u1v2",
+      "name": "Process Invoice Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "your-invoices-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Invoices"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "invoiceNumber": "={{ $json.invoiceNumber }}",
+            "date": "={{ $json.date }}",
+            "dueDate": "={{ $json.dueDate }}",
+            "vendor": "={{ $json.vendor }}",
+            "vendorEmail": "={{ $json.vendorEmail }}",
+            "amount": "={{ $json.amount }}",
+            "taxAmount": "={{ $json.taxAmount }}",
+            "totalAmount": "={{ $json.totalAmount }}",
+            "currency": "={{ $json.currency }}",
+            "description": "={{ $json.description }}",
+            "category": "={{ $json.category }}",
+            "status": "={{ $json.status }}",
+            "priority": "={{ $json.priority }}",
+            "daysUntilDue": "={{ $json.daysUntilDue }}",
+            "paymentTerms": "={{ $json.paymentTerms }}",
+            "driveFileUrl": "={{ $json.driveFileUrl }}",
+            "emailId": "={{ $json.emailId }}",
+            "processedAt": "={{ $json.processedAt }}",
+            "extractionMethod": "={{ $json.extractionMethod }}"
+          },
+          "matchingColumns": [
+            "invoiceNumber"
+          ],
+          "schema": [
+            {
+              "id": "invoiceNumber",
+              "displayName": "invoiceNumber",
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "date",
+              "displayName": "date",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "dueDate",
+              "displayName": "dueDate",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "vendor",
+              "displayName": "vendor",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "vendorEmail",
+              "displayName": "vendorEmail",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "amount",
+              "displayName": "amount",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "taxAmount",
+              "displayName": "taxAmount",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "totalAmount",
+              "displayName": "totalAmount",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "currency",
+              "displayName": "currency",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "description",
+              "displayName": "description",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "category",
+              "displayName": "category",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "priority",
+              "displayName": "priority",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "daysUntilDue",
+              "displayName": "daysUntilDue",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "paymentTerms",
+              "displayName": "paymentTerms",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "driveFileUrl",
+              "displayName": "driveFileUrl",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "emailId",
+              "displayName": "emailId",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "processedAt",
+              "displayName": "processedAt",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "extractionMethod",
+              "displayName": "extractionMethod",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8h9i0j1k-2l3m-4n5o-6p7q-r8s9t0u1v2w3",
+      "name": "Save to Invoices Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1780, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.priority }}",
+              "rightValue": "High",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combineOperation": "any"
+        },
+        "options": {}
+      },
+      "id": "9i0j1k2l-3m4n-5o6p-7q8r-s9t0u1v2w3x4",
+      "name": "High Priority?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2000, 200]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "your-finance-team-chat-id",
+        "text": "🚨 **High Priority Invoice Received**\n\n**Invoice:** {{ $json.invoiceNumber }}\n**Vendor:** {{ $json.vendor }}\n**Amount:** {{ $json.currency }} {{ $json.totalAmount.toFixed(2) }}\n**Due Date:** {{ $json.dueDate || 'Not specified' }}\n**Status:** {{ $json.status }}\n\n**Description:** {{ $json.description }}\n\n[📄 View Invoice]({{ $json.driveFileUrl }})\n[📊 View Dashboard](https://docs.google.com/spreadsheets/d/your-invoices-sheet-id)",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "0j1k2l3m-4n5o-6p7q-8r9s-t0u1v2w3x4y5",
+      "name": "Alert High Priority",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [2220, 200],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot-credential",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "your-finance-team-chat-id",
+        "text": "📄 **New Invoice Processed**\n\n**Invoice:** {{ $json.invoiceNumber }}\n**Vendor:** {{ $json.vendor }}\n**Amount:** {{ $json.currency }} {{ $json.totalAmount.toFixed(2) }}\n**Priority:** {{ $json.priority }}\n**Status:** {{ $json.status }}\n\n[📄 View Invoice]({{ $json.driveFileUrl }})\n[📊 Manage Invoices](https://docs.google.com/spreadsheets/d/your-invoices-sheet-id)",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "1k2l3m4n-5o6p-7q8r-9s0t-u1v2w3x4y5z6",
+      "name": "Send Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [2000, 400],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot-credential",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "addLabels",
+        "messageId": "={{ $json.emailId }}",
+        "labelIds": [
+          "PROCESSED_INVOICE"
+        ]
+      },
+      "id": "2l3m4n5o-6p7q-8r9s-0t1u-v2w3x4y5z6a7",
+      "name": "Mark Email Processed",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [2220, 400],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-oauth-credential",
+          "name": "Gmail OAuth2"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Gmail Invoice Trigger": {
+      "main": [
+        [
+          {
+            "node": "Validate Invoice Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Invoice Email": {
+      "main": [
+        [
+          {
+            "node": "Is Valid Invoice?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Valid Invoice?": {
+      "main": [
+        [
+          {
+            "node": "Process Attachments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Attachments": {
+      "main": [
+        [
+          {
+            "node": "Upload to Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to Drive": {
+      "main": [
+        [
+          {
+            "node": "Extract Invoice Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Invoice Data": {
+      "main": [
+        [
+          {
+            "node": "Process Invoice Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Invoice Data": {
+      "main": [
+        [
+          {
+            "node": "Save to Invoices Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Invoices Sheet": {
+      "main": [
+        [
+          {
+            "node": "High Priority?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "High Priority?": {
+      "main": [
+        [
+          {
+            "node": "Alert High Priority",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Notification": {
+      "main": [
+        [
+          {
+            "node": "Mark Email Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-12-19T10:00:00.000Z",
+      "updatedAt": "2024-12-19T10:00:00.000Z",
+      "id": "business-operations",
+      "name": "Business Operations"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-12-19T10:00:00.000Z",
+  "versionId": "1"
+}

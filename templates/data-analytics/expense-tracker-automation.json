@@ -1,0 +1,461 @@
+{
+  "name": "Expense Tracker Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "filters": {
+          "subject": "Receipt",
+          "sender": "",
+          "readStatus": "unread"
+        },
+        "format": "resolved",
+        "options": {
+          "downloadAttachments": true
+        }
+      },
+      "id": "1a2b3c4d-5e6f-7g8h-9i0j-k1l2m3n4o5p6",
+      "name": "Gmail Receipt Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-oauth-credential",
+          "name": "Gmail OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract expense information from email\nconst email = $json;\nconst subject = email.subject || '';\nconst body = email.textPlain || email.textHtml || '';\nconst sender = email.from?.value?.[0]?.address || '';\nconst date = new Date(email.date).toISOString();\n\n// Common expense patterns\nconst expensePatterns = {\n  amount: /\\$?([0-9,]+\\.?[0-9]*)/g,\n  total: /total[:\\s]*\\$?([0-9,]+\\.?[0-9]*)/gi,\n  subtotal: /subtotal[:\\s]*\\$?([0-9,]+\\.?[0-9]*)/gi,\n  tax: /tax[:\\s]*\\$?([0-9,]+\\.?[0-9]*)/gi\n};\n\n// Extract amounts\nconst amounts = [];\nconst totalMatch = body.match(expensePatterns.total);\nconst subtotalMatch = body.match(expensePatterns.subtotal);\nconst taxMatch = body.match(expensePatterns.tax);\n\nlet amount = 0;\nif (totalMatch) {\n  amount = parseFloat(totalMatch[0].replace(/[^0-9.]/g, ''));\n} else if (subtotalMatch) {\n  amount = parseFloat(subtotalMatch[0].replace(/[^0-9.]/g, ''));\n} else {\n  // Find largest amount in email\n  const allAmounts = body.match(expensePatterns.amount) || [];\n  if (allAmounts.length > 0) {\n    amount = Math.max(...allAmounts.map(a => parseFloat(a.replace(/[^0-9.]/g, ''))));\n  }\n}\n\n// Categorize based on sender\nlet category = 'Other';\nconst merchant = sender.toLowerCase();\n\nif (merchant.includes('amazon') || merchant.includes('ebay')) {\n  category = 'Shopping';\n} else if (merchant.includes('uber') || merchant.includes('lyft') || merchant.includes('taxi')) {\n  category = 'Transportation';\n} else if (merchant.includes('restaurant') || merchant.includes('food') || merchant.includes('cafe')) {\n  category = 'Food & Dining';\n} else if (merchant.includes('gas') || merchant.includes('fuel') || merchant.includes('shell') || merchant.includes('exxon')) {\n  category = 'Gas & Fuel';\n} else if (merchant.includes('hotel') || merchant.includes('airbnb') || merchant.includes('booking')) {\n  category = 'Travel';\n} else if (merchant.includes('office') || merchant.includes('supply') || merchant.includes('staples')) {\n  category = 'Office Supplies';\n} else if (merchant.includes('utility') || merchant.includes('electric') || merchant.includes('water')) {\n  category = 'Utilities';\n}\n\n// Extract merchant name from sender or subject\nlet merchantName = sender.split('@')[0].replace(/[^a-zA-Z0-9\\s]/g, '');\nif (subject.toLowerCase().includes('receipt from')) {\n  const receiptMatch = subject.match(/receipt from ([^\\-\\|]+)/i);\n  if (receiptMatch) {\n    merchantName = receiptMatch[1].trim();\n  }\n}\n\nconst expense = {\n  id: email.id,\n  date: date,\n  amount: amount,\n  merchant: merchantName,\n  category: category,\n  description: subject,\n  email: sender,\n  source: 'email',\n  status: 'pending_review',\n  attachments: email.attachments || [],\n  rawData: {\n    subject: subject,\n    sender: sender,\n    body: body.substring(0, 500) // First 500 chars for reference\n  }\n};\n\nreturn { json: expense };"
+      },
+      "id": "2b3c4d5e-6f7g-8h9i-0j1k-l2m3n4o5p6q7",
+      "name": "Extract Expense Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.amount }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            },
+            {
+              "leftValue": "={{ $json.amount }}",
+              "rightValue": 10000,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combineOperation": "all"
+        },
+        "options": {}
+      },
+      "id": "3c4d5e6f-7g8h-9i0j-1k2l-m3n4o5p6q7r8",
+      "name": "Valid Amount?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "options": {
+          "temperature": 0.3,
+          "maxTokens": 300
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are an expense categorization assistant. Analyze the expense details and provide a better category and description. Return only a JSON object with 'category' and 'description' fields."
+            },
+            {
+              "role": "user",
+              "content": "Categorize this expense:\n\nMerchant: {{ $json.merchant }}\nAmount: ${{ $json.amount }}\nOriginal Category: {{ $json.category }}\nEmail Subject: {{ $json.description }}\nSender: {{ $json.email }}\n\nProvide a more accurate category from: [Food & Dining, Transportation, Shopping, Travel, Entertainment, Utilities, Office Supplies, Gas & Fuel, Healthcare, Education, Other] and a clean description."
+            }
+          ]
+        }
+      },
+      "id": "4d5e6f7g-8h9i-0j1k-2l3m-n4o5p6q7r8s9",
+      "name": "AI Categorization",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1,
+      "position": [900, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-api-credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge AI categorization with original data\nconst originalExpense = $('Extract Expense Data').item.json;\nconst aiResponse = $json.response;\n\nlet aiData = {};\ntry {\n  aiData = JSON.parse(aiResponse);\n} catch (e) {\n  // If AI response is not valid JSON, extract manually\n  const categoryMatch = aiResponse.match(/\"category\"\\s*:\\s*\"([^\"]+)\"/);\n  const descriptionMatch = aiResponse.match(/\"description\"\\s*:\\s*\"([^\"]+)\"/);\n  \n  aiData = {\n    category: categoryMatch ? categoryMatch[1] : originalExpense.category,\n    description: descriptionMatch ? descriptionMatch[1] : originalExpense.description\n  };\n}\n\nconst finalExpense = {\n  ...originalExpense,\n  category: aiData.category || originalExpense.category,\n  description: aiData.description || originalExpense.description,\n  aiProcessed: true,\n  processedAt: new Date().toISOString()\n};\n\nreturn { json: finalExpense };"
+      },
+      "id": "5e6f7g8h-9i0j-1k2l-3m4n-o5p6q7r8s9t0",
+      "name": "Merge AI Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "your-expense-tracker-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Expenses"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "date": "={{ new Date($json.date).toLocaleDateString() }}",
+            "amount": "={{ $json.amount }}",
+            "merchant": "={{ $json.merchant }}",
+            "category": "={{ $json.category }}",
+            "description": "={{ $json.description }}",
+            "source": "={{ $json.source }}",
+            "status": "={{ $json.status }}",
+            "emailId": "={{ $json.id }}",
+            "processedAt": "={{ $json.processedAt }}"
+          },
+          "matchingColumns": [
+            "emailId"
+          ],
+          "schema": [
+            {
+              "id": "date",
+              "displayName": "date",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "amount",
+              "displayName": "amount",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "merchant",
+              "displayName": "merchant",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "category",
+              "displayName": "category",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "description",
+              "displayName": "description",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "emailId",
+              "displayName": "emailId",
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "processedAt",
+              "displayName": "processedAt",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6f7g8h9i-0j1k-2l3m-4n5o-p6q7r8s9t0u1",
+      "name": "Save to Expense Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1340, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "your-personal-chat-id",
+        "text": "💰 **New Expense Tracked!**\n\n**Amount:** ${{ $json.amount }}\n**Merchant:** {{ $json.merchant }}\n**Category:** {{ $json.category }}\n**Description:** {{ $json.description }}\n**Date:** {{ new Date($json.date).toLocaleDateString() }}\n\n[📊 View Expense Tracker](https://docs.google.com/spreadsheets/d/your-expense-tracker-sheet-id)",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "7g8h9i0j-1k2l-3m4n-5o6p-q7r8s9t0u1v2",
+      "name": "Send Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1560, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot-credential",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 18 * * 0"
+            }
+          ]
+        }
+      },
+      "id": "8h9i0j1k-2l3m-4n5o-6p7q-r8s9t0u1v2w3",
+      "name": "Weekly Summary Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 600]
+    },
+    {
+      "parameters": {
+        "operation": "readOrSearch",
+        "documentId": {
+          "__rl": true,
+          "value": "your-expense-tracker-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Expenses"
+        },
+        "options": {
+          "where": {
+            "values": [
+              {
+                "column": "date",
+                "condition": "dateAfter",
+                "value": "={{ new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] }}"
+              }
+            ],
+            "combineOperation": "all"
+          }
+        }
+      },
+      "id": "9i0j1k2l-3m4n-5o6p-7q8r-s9t0u1v2w3x4",
+      "name": "Get Week Expenses",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [460, 600],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate weekly expense summary\nconst expenses = $input.all();\n\nif (expenses.length === 0) {\n  return { json: { noExpenses: true, message: 'No expenses this week!' } };\n}\n\n// Calculate totals by category\nconst categoryTotals = {};\nlet totalAmount = 0;\nlet transactionCount = 0;\n\nexpenses.forEach(expense => {\n  const amount = parseFloat(expense.json.amount) || 0;\n  const category = expense.json.category || 'Other';\n  \n  totalAmount += amount;\n  transactionCount++;\n  \n  if (!categoryTotals[category]) {\n    categoryTotals[category] = { amount: 0, count: 0 };\n  }\n  categoryTotals[category].amount += amount;\n  categoryTotals[category].count++;\n});\n\n// Sort categories by amount\nconst sortedCategories = Object.entries(categoryTotals)\n  .sort(([,a], [,b]) => b.amount - a.amount)\n  .slice(0, 5); // Top 5 categories\n\n// Calculate averages\nconst avgPerTransaction = totalAmount / transactionCount;\nconst avgPerDay = totalAmount / 7;\n\n// Generate summary message\nconst weekStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toLocaleDateString();\nconst weekEnd = new Date().toLocaleDateString();\n\nconst summary = `📊 **Weekly Expense Summary** (${weekStart} - ${weekEnd})\n\n` +\n  `**Overview:**\n` +\n  `• Total Spent: $${totalAmount.toFixed(2)}\n` +\n  `• Transactions: ${transactionCount}\n` +\n  `• Avg per Transaction: $${avgPerTransaction.toFixed(2)}\n` +\n  `• Avg per Day: $${avgPerDay.toFixed(2)}\n\n` +\n  `**Top Categories:**\n` +\n  sortedCategories.map(([category, data]) => \n    `• ${category}: $${data.amount.toFixed(2)} (${data.count} transactions)`\n  ).join('\\n') +\n  `\n\n[📈 View Full Report](https://docs.google.com/spreadsheets/d/your-expense-tracker-sheet-id)`;\n\nreturn {\n  json: {\n    summary: summary,\n    totalAmount: totalAmount,\n    transactionCount: transactionCount,\n    categoryTotals: categoryTotals,\n    avgPerTransaction: avgPerTransaction,\n    avgPerDay: avgPerDay,\n    weekStart: weekStart,\n    weekEnd: weekEnd\n  }\n};"
+      },
+      "id": "0j1k2l3m-4n5o-6p7q-8r9s-t0u1v2w3x4y5",
+      "name": "Generate Weekly Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 600]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "your-personal-chat-id",
+        "text": "={{ $json.summary }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "1k2l3m4n-5o6p-7q8r-9s0t-u1v2w3x4y5z6",
+      "name": "Send Weekly Summary",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [900, 600],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot-credential",
+          "name": "Telegram Bot API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Gmail Receipt Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Expense Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Expense Data": {
+      "main": [
+        [
+          {
+            "node": "Valid Amount?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid Amount?": {
+      "main": [
+        [
+          {
+            "node": "AI Categorization",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Categorization": {
+      "main": [
+        [
+          {
+            "node": "Merge AI Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge AI Data": {
+      "main": [
+        [
+          {
+            "node": "Save to Expense Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Expense Sheet": {
+      "main": [
+        [
+          {
+            "node": "Send Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Weekly Summary Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Week Expenses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Week Expenses": {
+      "main": [
+        [
+          {
+            "node": "Generate Weekly Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Weekly Summary": {
+      "main": [
+        [
+          {
+            "node": "Send Weekly Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-12-19T10:00:00.000Z",
+      "updatedAt": "2024-12-19T10:00:00.000Z",
+      "id": "data-analytics",
+      "name": "Data & Analytics"
+    }
+  ],
+  "triggerCount": 2,
+  "updatedAt": "2024-12-19T10:00:00.000Z",
+  "versionId": "1"
+}

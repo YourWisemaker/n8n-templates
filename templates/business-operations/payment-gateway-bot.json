@@ -1,0 +1,451 @@
+{
+  "name": "Payment Gateway Bot",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "checkout-start",
+        "options": {}
+      },
+      "id": "checkout-webhook",
+      "name": "Checkout Initiation",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "checkout-start-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process checkout initiation\nconst checkoutData = $json.body;\n\n// Validate required fields\nconst requiredFields = ['customerId', 'items', 'totalAmount', 'currency'];\nconst missingFields = requiredFields.filter(field => !checkoutData[field]);\n\nif (missingFields.length > 0) {\n  return {\n    json: {\n      error: true,\n      message: `Missing required fields: ${missingFields.join(', ')}`,\n      status: 'validation_failed'\n    }\n  };\n}\n\n// Generate checkout session\nconst checkoutSession = {\n  sessionId: `checkout_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,\n  customerId: checkoutData.customerId,\n  customerEmail: checkoutData.customerEmail || '',\n  customerName: checkoutData.customerName || '',\n  items: checkoutData.items,\n  subtotal: parseFloat(checkoutData.subtotal) || 0,\n  tax: parseFloat(checkoutData.tax) || 0,\n  shipping: parseFloat(checkoutData.shipping) || 0,\n  discount: parseFloat(checkoutData.discount) || 0,\n  totalAmount: parseFloat(checkoutData.totalAmount),\n  currency: checkoutData.currency.toUpperCase(),\n  paymentMethods: checkoutData.paymentMethods || ['card', 'paypal', 'apple_pay'],\n  shippingAddress: checkoutData.shippingAddress || {},\n  billingAddress: checkoutData.billingAddress || {},\n  metadata: checkoutData.metadata || {},\n  createdAt: new Date().toISOString(),\n  expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(), // 30 minutes\n  status: 'initiated',\n  botAssisted: true,\n  conversationId: `conv_${Date.now()}`\n};\n\n// Calculate processing fee\ncheckoutSession.processingFee = Math.round(checkoutSession.totalAmount * 0.029 * 100) / 100; // 2.9%\ncheckoutSession.finalAmount = checkoutSession.totalAmount + checkoutSession.processingFee;\n\nreturn { json: checkoutSession };"
+      },
+      "id": "checkout-processor",
+      "name": "Checkout Processor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.error }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-validation",
+      "name": "Check Validation",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "validation-error",
+      "name": "Validation Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [680, 500]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "prompt": "You are a helpful checkout assistant bot. A customer is starting their checkout process. Here are the details:\n\nCustomer: {{ $json.customerName || 'Valued Customer' }}\nItems: {{ $json.items.length }} item(s)\nTotal: {{ $json.currency }} {{ $json.totalAmount }}\nPayment Methods: {{ $json.paymentMethods.join(', ') }}\n\nCreate a friendly, professional welcome message that:\n1. Greets the customer\n2. Summarizes their order\n3. Explains the checkout process\n4. Offers assistance\n5. Mentions security and data protection\n\nKeep it conversational and reassuring.",
+        "options": {
+          "temperature": 0.7,
+          "maxTokens": 300
+        }
+      },
+      "id": "bot-welcome",
+      "name": "Bot Welcome Message",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process bot response and create checkout UI\nconst botMessage = $json.choices[0].message.content;\nconst checkoutData = $('Checkout Processor').item(0).json;\n\n// Create checkout UI data\nconst checkoutUI = {\n  sessionId: checkoutData.sessionId,\n  conversationId: checkoutData.conversationId,\n  botMessage: botMessage,\n  checkoutData: {\n    items: checkoutData.items,\n    subtotal: checkoutData.subtotal,\n    tax: checkoutData.tax,\n    shipping: checkoutData.shipping,\n    discount: checkoutData.discount,\n    processingFee: checkoutData.processingFee,\n    totalAmount: checkoutData.finalAmount,\n    currency: checkoutData.currency\n  },\n  paymentOptions: checkoutData.paymentMethods.map(method => ({\n    id: method,\n    name: method.replace('_', ' ').toUpperCase(),\n    icon: `${method}-icon`,\n    enabled: true,\n    processingTime: method === 'card' ? 'Instant' : method === 'paypal' ? '1-2 minutes' : 'Instant'\n  })),\n  securityFeatures: [\n    'SSL Encrypted',\n    'PCI DSS Compliant',\n    '3D Secure Authentication',\n    'Fraud Protection'\n  ],\n  progressSteps: [\n    { step: 1, name: 'Review Order', status: 'current' },\n    { step: 2, name: 'Payment Details', status: 'pending' },\n    { step: 3, name: 'Confirmation', status: 'pending' }\n  ],\n  estimatedCompletion: '2-3 minutes',\n  supportOptions: [\n    'Live Chat',\n    'Phone Support',\n    'Email Help'\n  ]\n};\n\nreturn { json: checkoutUI };"
+      },
+      "id": "ui-generator",
+      "name": "Checkout UI Generator",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "checkout-response",
+      "name": "Checkout Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "payment-process",
+        "options": {}
+      },
+      "id": "payment-webhook",
+      "name": "Payment Processing",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 700],
+      "webhookId": "payment-process-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process payment submission\nconst paymentData = $json.body;\n\n// Validate payment data\nconst requiredPaymentFields = ['sessionId', 'paymentMethod', 'amount'];\nconst missingPaymentFields = requiredPaymentFields.filter(field => !paymentData[field]);\n\nif (missingPaymentFields.length > 0) {\n  return {\n    json: {\n      error: true,\n      message: `Missing payment fields: ${missingPaymentFields.join(', ')}`,\n      status: 'payment_validation_failed'\n    }\n  };\n}\n\n// Simulate payment processing\nconst paymentResult = {\n  sessionId: paymentData.sessionId,\n  transactionId: `txn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,\n  paymentMethod: paymentData.paymentMethod,\n  amount: parseFloat(paymentData.amount),\n  currency: paymentData.currency || 'USD',\n  status: 'processing',\n  processedAt: new Date().toISOString(),\n  gatewayResponse: {\n    authCode: Math.random().toString(36).substr(2, 8).toUpperCase(),\n    referenceNumber: Math.random().toString(36).substr(2, 12).toUpperCase(),\n    processingTime: Math.floor(Math.random() * 3000) + 1000 // 1-4 seconds\n  },\n  riskAssessment: {\n    score: Math.floor(Math.random() * 30) + 70, // 70-100 (low risk)\n    level: 'low',\n    factors: ['verified_customer', 'normal_transaction_pattern', 'secure_payment_method']\n  },\n  customerData: {\n    id: paymentData.customerId,\n    email: paymentData.customerEmail,\n    ipAddress: paymentData.ipAddress || '127.0.0.1',\n    userAgent: paymentData.userAgent || 'Unknown'\n  }\n};\n\n// Simulate success/failure (95% success rate)\nconst isSuccess = Math.random() > 0.05;\n\nif (isSuccess) {\n  paymentResult.status = 'completed';\n  paymentResult.completedAt = new Date().toISOString();\n  paymentResult.receiptNumber = `RCP_${Date.now()}`;\n} else {\n  paymentResult.status = 'failed';\n  paymentResult.failureReason = 'insufficient_funds';\n  paymentResult.errorCode = 'CARD_DECLINED';\n}\n\nreturn { json: paymentResult };"
+      },
+      "id": "payment-processor",
+      "name": "Payment Processor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 700]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "completed",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-payment-status",
+      "name": "Check Payment Status",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 700]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "prompt": "Generate a success message for a completed payment:\n\nTransaction ID: {{ $json.transactionId }}\nAmount: {{ $json.currency }} {{ $json.amount }}\nPayment Method: {{ $json.paymentMethod }}\nReceipt Number: {{ $json.receiptNumber }}\n\nCreate a congratulatory message that:\n1. Confirms successful payment\n2. Provides transaction details\n3. Mentions next steps\n4. Offers support if needed\n5. Thanks the customer\n\nKeep it professional and reassuring.",
+        "options": {
+          "temperature": 0.6,
+          "maxTokens": 250
+        }
+      },
+      "id": "success-bot",
+      "name": "Success Bot Message",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [900, 600]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "prompt": "Generate a helpful message for a failed payment:\n\nTransaction ID: {{ $json.transactionId }}\nFailure Reason: {{ $json.failureReason }}\nError Code: {{ $json.errorCode }}\nPayment Method: {{ $json.paymentMethod }}\n\nCreate a supportive message that:\n1. Acknowledges the payment issue\n2. Explains what happened (user-friendly)\n3. Suggests solutions\n4. Offers alternative payment methods\n5. Provides support options\n\nBe empathetic and solution-focused.",
+        "options": {
+          "temperature": 0.7,
+          "maxTokens": 300
+        }
+      },
+      "id": "failure-bot",
+      "name": "Failure Bot Message",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [900, 800]
+    },
+    {
+      "parameters": {
+        "resource": "spreadsheet",
+        "operation": "appendOrUpdate",
+        "documentId": "{{ $env.GOOGLE_SHEETS_PAYMENTS_ID }}",
+        "sheetName": "Payment Transactions",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ $json.processedAt }}",
+            "Transaction ID": "={{ $json.transactionId }}",
+            "Session ID": "={{ $json.sessionId }}",
+            "Customer ID": "={{ $json.customerData.id }}",
+            "Amount": "={{ $json.amount }}",
+            "Currency": "={{ $json.currency }}",
+            "Payment Method": "={{ $json.paymentMethod }}",
+            "Status": "={{ $json.status }}",
+            "Auth Code": "={{ $json.gatewayResponse.authCode }}",
+            "Reference": "={{ $json.gatewayResponse.referenceNumber }}",
+            "Risk Score": "={{ $json.riskAssessment.score }}",
+            "Receipt Number": "={{ $json.receiptNumber || 'N/A' }}",
+            "Failure Reason": "={{ $json.failureReason || 'N/A' }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "log-transaction",
+      "name": "Log Transaction",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1120, 700]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Combine payment result with bot message\nconst paymentData = $('Payment Processor').item(0).json;\nconst botMessage = $json.choices[0].message.content;\n\nconst response = {\n  success: paymentData.status === 'completed',\n  transactionId: paymentData.transactionId,\n  status: paymentData.status,\n  botMessage: botMessage,\n  paymentData: paymentData,\n  timestamp: new Date().toISOString(),\n  nextSteps: paymentData.status === 'completed' ? [\n    'Order confirmation email sent',\n    'Processing will begin shortly',\n    'Tracking information will be provided',\n    'Customer support available 24/7'\n  ] : [\n    'Please try a different payment method',\n    'Contact your bank if issue persists',\n    'Our support team is here to help',\n    'Your order is saved for 24 hours'\n  ]\n};\n\nreturn { json: response };"
+      },
+      "id": "final-response",
+      "name": "Final Response Builder",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 700]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "payment-response",
+      "name": "Payment Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1560, 700]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.amount }}",
+              "rightValue": 1000,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-high-value",
+      "name": "Check High Value Transaction",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1340, 900]
+    },
+    {
+      "parameters": {
+        "chatId": "{{ $env.TELEGRAM_PAYMENTS_CHAT_ID }}",
+        "text": "💰 *High Value Transaction Alert*\n\n🆔 *Transaction:* {{ $json.transactionId }}\n💵 *Amount:* {{ $json.currency }} {{ $json.amount }}\n👤 *Customer:* {{ $json.customerData.id }}\n💳 *Method:* {{ $json.paymentMethod }}\n✅ *Status:* {{ $json.status }}\n🛡️ *Risk Score:* {{ $json.riskAssessment.score }}/100\n\n📧 *Receipt:* {{ $json.receiptNumber }}\n🔐 *Auth Code:* {{ $json.gatewayResponse.authCode }}",
+        "additionalFields": {
+          "parseMode": "Markdown"
+        }
+      },
+      "id": "high-value-alert",
+      "name": "High Value Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1560, 900]
+    }
+  ],
+  "connections": {
+    "Checkout Initiation": {
+      "main": [
+        [
+          {
+            "node": "Checkout Processor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Checkout Processor": {
+      "main": [
+        [
+          {
+            "node": "Check Validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Validation": {
+      "main": [
+        [
+          {
+            "node": "Validation Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Bot Welcome Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bot Welcome Message": {
+      "main": [
+        [
+          {
+            "node": "Checkout UI Generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Checkout UI Generator": {
+      "main": [
+        [
+          {
+            "node": "Checkout Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Payment Processing": {
+      "main": [
+        [
+          {
+            "node": "Payment Processor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Payment Processor": {
+      "main": [
+        [
+          {
+            "node": "Check Payment Status",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Transaction",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check High Value Transaction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Payment Status": {
+      "main": [
+        [
+          {
+            "node": "Success Bot Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Failure Bot Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Success Bot Message": {
+      "main": [
+        [
+          {
+            "node": "Final Response Builder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Failure Bot Message": {
+      "main": [
+        [
+          {
+            "node": "Final Response Builder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Final Response Builder": {
+      "main": [
+        [
+          {
+            "node": "Payment Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check High Value Transaction": {
+      "main": [
+        [
+          {
+            "node": "High Value Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 2,
+  "updatedAt": "2024-01-15T10:00:00.000Z",
+  "versionId": "1"
+}

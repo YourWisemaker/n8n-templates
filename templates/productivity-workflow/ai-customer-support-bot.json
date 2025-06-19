@@ -1,0 +1,509 @@
+{
+  "name": "AI Customer Support Bot",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "customer-support",
+        "options": {}
+      },
+      "id": "support-webhook",
+      "name": "Customer Support Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "customer-support-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process customer support request\nconst supportData = $json.body;\n\n// Validate required fields\nconst requiredFields = ['message', 'customerId'];\nconst missingFields = requiredFields.filter(field => !supportData[field]);\n\nif (missingFields.length > 0) {\n  return {\n    json: {\n      error: true,\n      message: `Missing required fields: ${missingFields.join(', ')}`,\n      status: 'validation_failed'\n    }\n  };\n}\n\n// Create support session\nconst supportSession = {\n  sessionId: `support_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`,\n  customerId: supportData.customerId,\n  customerName: supportData.customerName || 'Valued Customer',\n  customerEmail: supportData.customerEmail || '',\n  customerPhone: supportData.customerPhone || '',\n  message: supportData.message,\n  channel: supportData.channel || 'web',\n  priority: 'medium',\n  category: 'general',\n  language: supportData.language || 'en',\n  timestamp: new Date().toISOString(),\n  status: 'new',\n  metadata: {\n    userAgent: supportData.userAgent || '',\n    ipAddress: supportData.ipAddress || '',\n    referrer: supportData.referrer || '',\n    platform: supportData.platform || 'web'\n  }\n};\n\n// Analyze message for priority and category\nconst messageText = supportData.message.toLowerCase();\n\n// Priority detection\nconst urgentKeywords = ['urgent', 'emergency', 'critical', 'asap', 'immediately', 'broken', 'not working', 'error', 'bug'];\nconst highKeywords = ['important', 'soon', 'problem', 'issue', 'help', 'support'];\n\nif (urgentKeywords.some(keyword => messageText.includes(keyword))) {\n  supportSession.priority = 'urgent';\n} else if (highKeywords.some(keyword => messageText.includes(keyword))) {\n  supportSession.priority = 'high';\n}\n\n// Category detection\nconst categoryKeywords = {\n  billing: ['billing', 'payment', 'invoice', 'charge', 'refund', 'subscription', 'price', 'cost'],\n  technical: ['technical', 'bug', 'error', 'not working', 'broken', 'crash', 'slow', 'login', 'password'],\n  account: ['account', 'profile', 'settings', 'username', 'email', 'phone', 'address'],\n  product: ['product', 'feature', 'how to', 'tutorial', 'guide', 'documentation'],\n  shipping: ['shipping', 'delivery', 'tracking', 'order', 'package', 'arrived'],\n  cancellation: ['cancel', 'cancellation', 'unsubscribe', 'delete', 'remove']\n};\n\nfor (const [category, keywords] of Object.entries(categoryKeywords)) {\n  if (keywords.some(keyword => messageText.includes(keyword))) {\n    supportSession.category = category;\n    break;\n  }\n}\n\n// Estimate complexity\nconst wordCount = supportData.message.split(' ').length;\nif (wordCount > 100) {\n  supportSession.complexity = 'high';\n} else if (wordCount > 50) {\n  supportSession.complexity = 'medium';\n} else {\n  supportSession.complexity = 'low';\n}\n\nreturn { json: supportSession };"
+      },
+      "id": "support-processor",
+      "name": "Support Request Processor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.error }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-validation",
+      "name": "Check Validation",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "validation-error",
+      "name": "Validation Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [680, 500]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "prompt": "You are a helpful customer support AI assistant. A customer has contacted support with the following details:\n\nCustomer: {{ $json.customerName }}\nCategory: {{ $json.category }}\nPriority: {{ $json.priority }}\nMessage: {{ $json.message }}\n\nProvide a helpful, professional response that:\n1. Acknowledges their concern\n2. Provides relevant information or solution\n3. Offers next steps if needed\n4. Maintains a friendly, supportive tone\n5. Asks clarifying questions if necessary\n\nIf the issue seems complex or requires human intervention, suggest escalation to a human agent. Keep the response concise but comprehensive.",
+        "options": {
+          "temperature": 0.7,
+          "maxTokens": 400
+        }
+      },
+      "id": "ai-response-generator",
+      "name": "AI Response Generator",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process AI response and determine next actions\nconst aiResponse = $json.choices[0].message.content;\nconst supportData = $('Support Request Processor').item(0).json;\n\n// Analyze AI response for escalation indicators\nconst escalationKeywords = ['escalate', 'human agent', 'specialist', 'complex', 'technical team', 'manager'];\nconst needsEscalation = escalationKeywords.some(keyword => \n  aiResponse.toLowerCase().includes(keyword)\n) || supportData.priority === 'urgent';\n\n// Determine response type\nlet responseType = 'resolved';\nif (needsEscalation) {\n  responseType = 'escalated';\n} else if (aiResponse.toLowerCase().includes('follow up') || aiResponse.toLowerCase().includes('more information')) {\n  responseType = 'pending_info';\n}\n\n// Calculate satisfaction prediction\nconst positiveWords = ['help', 'solve', 'solution', 'resolve', 'fix', 'assist'];\nconst satisfactionScore = positiveWords.filter(word => \n  aiResponse.toLowerCase().includes(word)\n).length * 20; // 0-100 scale\n\n// Generate response data\nconst responseData = {\n  sessionId: supportData.sessionId,\n  aiResponse: aiResponse,\n  responseType: responseType,\n  needsEscalation: needsEscalation,\n  satisfactionPrediction: Math.min(satisfactionScore + 60, 100), // Base 60% + bonus\n  estimatedResolutionTime: responseType === 'resolved' ? '0 minutes' : \n                          responseType === 'pending_info' ? '2-4 hours' : \n                          '4-24 hours',\n  suggestedActions: [],\n  followUpRequired: responseType !== 'resolved',\n  timestamp: new Date().toISOString(),\n  supportData: supportData\n};\n\n// Add suggested actions based on category\nswitch (supportData.category) {\n  case 'billing':\n    responseData.suggestedActions.push('Check payment history', 'Review billing settings');\n    break;\n  case 'technical':\n    responseData.suggestedActions.push('Clear browser cache', 'Try different browser', 'Check system requirements');\n    break;\n  case 'account':\n    responseData.suggestedActions.push('Verify email address', 'Update profile information');\n    break;\n  case 'product':\n    responseData.suggestedActions.push('Check documentation', 'Watch tutorial videos');\n    break;\n  case 'shipping':\n    responseData.suggestedActions.push('Track package', 'Contact shipping carrier');\n    break;\n}\n\n// Add escalation actions if needed\nif (needsEscalation) {\n  responseData.suggestedActions.push('Escalate to human agent', 'Create priority ticket');\n}\n\nreturn { json: responseData };"
+      },
+      "id": "response-processor",
+      "name": "Response Processor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "resource": "spreadsheet",
+        "operation": "appendOrUpdate",
+        "documentId": "{{ $env.GOOGLE_SHEETS_SUPPORT_ID }}",
+        "sheetName": "Support Tickets",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ $json.timestamp }}",
+            "Session ID": "={{ $json.sessionId }}",
+            "Customer ID": "={{ $json.supportData.customerId }}",
+            "Customer Name": "={{ $json.supportData.customerName }}",
+            "Email": "={{ $json.supportData.customerEmail }}",
+            "Category": "={{ $json.supportData.category }}",
+            "Priority": "={{ $json.supportData.priority }}",
+            "Complexity": "={{ $json.supportData.complexity }}",
+            "Channel": "={{ $json.supportData.channel }}",
+            "Message": "={{ $json.supportData.message }}",
+            "AI Response": "={{ $json.aiResponse }}",
+            "Response Type": "={{ $json.responseType }}",
+            "Needs Escalation": "={{ $json.needsEscalation }}",
+            "Satisfaction Prediction": "={{ $json.satisfactionPrediction }}%",
+            "Estimated Resolution": "={{ $json.estimatedResolutionTime }}",
+            "Follow Up Required": "={{ $json.followUpRequired }}",
+            "Status": "={{ $json.responseType === 'resolved' ? 'Closed' : 'Open' }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "log-support-ticket",
+      "name": "Log Support Ticket",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.needsEscalation }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-escalation",
+      "name": "Check Escalation Needed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1340, 500]
+    },
+    {
+      "parameters": {
+        "chatId": "{{ $env.TELEGRAM_SUPPORT_CHAT_ID }}",
+        "text": "🚨 *Support Escalation Required*\n\n🎫 *Session:* {{ $json.sessionId }}\n👤 *Customer:* {{ $json.supportData.customerName }}\n📧 *Email:* {{ $json.supportData.customerEmail }}\n📱 *Channel:* {{ $json.supportData.channel }}\n\n🏷️ *Category:* {{ $json.supportData.category.toUpperCase() }}\n⚡ *Priority:* {{ $json.supportData.priority.toUpperCase() }}\n🔧 *Complexity:* {{ $json.supportData.complexity.toUpperCase() }}\n\n💬 *Customer Message:*\n{{ $json.supportData.message }}\n\n🤖 *AI Response:*\n{{ $json.aiResponse }}\n\n⏱️ *Est. Resolution:* {{ $json.estimatedResolutionTime }}\n📊 *Satisfaction Prediction:* {{ $json.satisfactionPrediction }}%\n\n🔔 *Action Required:* Human agent intervention needed",
+        "additionalFields": {
+          "parseMode": "Markdown"
+        }
+      },
+      "id": "escalation-alert",
+      "name": "Escalation Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1560, 500]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: true, sessionId: $json.sessionId, response: $json.aiResponse, responseType: $json.responseType, needsEscalation: $json.needsEscalation, estimatedResolutionTime: $json.estimatedResolutionTime, suggestedActions: $json.suggestedActions, followUpRequired: $json.followUpRequired } }}",
+        "options": {}
+      },
+      "id": "support-response",
+      "name": "Support Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "support-feedback",
+        "options": {}
+      },
+      "id": "feedback-webhook",
+      "name": "Support Feedback Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 700],
+      "webhookId": "support-feedback-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process customer feedback\nconst feedbackData = $json.body;\n\n// Validate feedback data\nconst requiredFields = ['sessionId', 'rating'];\nconst missingFields = requiredFields.filter(field => !feedbackData[field]);\n\nif (missingFields.length > 0) {\n  return {\n    json: {\n      error: true,\n      message: `Missing required fields: ${missingFields.join(', ')}`,\n      status: 'validation_failed'\n    }\n  };\n}\n\n// Process feedback\nconst feedback = {\n  sessionId: feedbackData.sessionId,\n  rating: parseInt(feedbackData.rating), // 1-5 scale\n  comment: feedbackData.comment || '',\n  resolved: feedbackData.resolved === true || feedbackData.resolved === 'true',\n  helpful: feedbackData.helpful === true || feedbackData.helpful === 'true',\n  categories: feedbackData.categories || [],\n  improvementSuggestions: feedbackData.improvementSuggestions || '',\n  customerId: feedbackData.customerId || '',\n  timestamp: new Date().toISOString()\n};\n\n// Validate rating\nif (feedback.rating < 1 || feedback.rating > 5) {\n  return {\n    json: {\n      error: true,\n      message: 'Rating must be between 1 and 5',\n      status: 'invalid_rating'\n    }\n  };\n}\n\n// Analyze feedback sentiment\nconst comment = feedback.comment.toLowerCase();\nconst positiveWords = ['good', 'great', 'excellent', 'helpful', 'satisfied', 'thank', 'appreciate'];\nconst negativeWords = ['bad', 'terrible', 'awful', 'unhelpful', 'frustrated', 'disappointed', 'angry'];\n\nconst positiveCount = positiveWords.filter(word => comment.includes(word)).length;\nconst negativeCount = negativeWords.filter(word => comment.includes(word)).length;\n\nif (positiveCount > negativeCount) {\n  feedback.sentiment = 'positive';\n} else if (negativeCount > positiveCount) {\n  feedback.sentiment = 'negative';\n} else {\n  feedback.sentiment = 'neutral';\n}\n\n// Determine feedback category\nif (feedback.rating >= 4 && feedback.resolved) {\n  feedback.category = 'satisfied';\n} else if (feedback.rating <= 2 || !feedback.resolved) {\n  feedback.category = 'dissatisfied';\n} else {\n  feedback.category = 'neutral';\n}\n\n// Calculate NPS score contribution\nif (feedback.rating >= 4) {\n  feedback.npsCategory = 'promoter';\n} else if (feedback.rating >= 3) {\n  feedback.npsCategory = 'passive';\n} else {\n  feedback.npsCategory = 'detractor';\n}\n\nreturn { json: feedback };"
+      },
+      "id": "feedback-processor",
+      "name": "Feedback Processor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 700]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.error }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-feedback-validation",
+      "name": "Check Feedback Validation",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 700]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "feedback-error",
+      "name": "Feedback Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [680, 900]
+    },
+    {
+      "parameters": {
+        "resource": "spreadsheet",
+        "operation": "appendOrUpdate",
+        "documentId": "{{ $env.GOOGLE_SHEETS_SUPPORT_ID }}",
+        "sheetName": "Customer Feedback",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ $json.timestamp }}",
+            "Session ID": "={{ $json.sessionId }}",
+            "Customer ID": "={{ $json.customerId }}",
+            "Rating": "={{ $json.rating }}",
+            "Comment": "={{ $json.comment }}",
+            "Resolved": "={{ $json.resolved }}",
+            "Helpful": "={{ $json.helpful }}",
+            "Sentiment": "={{ $json.sentiment }}",
+            "Category": "={{ $json.category }}",
+            "NPS Category": "={{ $json.npsCategory }}",
+            "Improvement Suggestions": "={{ $json.improvementSuggestions }}",
+            "Categories": "={{ $json.categories.join(', ') }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "save-feedback",
+      "name": "Save Customer Feedback",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [900, 700]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.category }}",
+              "rightValue": "dissatisfied",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-negative-feedback",
+      "name": "Check Negative Feedback",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 700]
+    },
+    {
+      "parameters": {
+        "chatId": "{{ $env.TELEGRAM_SUPPORT_CHAT_ID }}",
+        "text": "⚠️ *Negative Customer Feedback Alert*\n\n🎫 *Session:* {{ $json.sessionId }}\n👤 *Customer:* {{ $json.customerId }}\n⭐ *Rating:* {{ $json.rating }}/5\n\n💭 *Comment:*\n{{ $json.comment }}\n\n📊 *Details:*\n• Resolved: {{ $json.resolved ? 'Yes' : 'No' }}\n• Helpful: {{ $json.helpful ? 'Yes' : 'No' }}\n• Sentiment: {{ $json.sentiment.toUpperCase() }}\n• NPS Category: {{ $json.npsCategory.toUpperCase() }}\n\n{{ $json.improvementSuggestions ? `💡 *Suggestions:*\\n${$json.improvementSuggestions}\\n` : '' }}🔔 *Action Required:* Follow up with customer to address concerns",
+        "additionalFields": {
+          "parseMode": "Markdown"
+        }
+      },
+      "id": "negative-feedback-alert",
+      "name": "Negative Feedback Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1340, 700]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: true, sessionId: $json.sessionId, rating: $json.rating, category: $json.category, sentiment: $json.sentiment, message: 'Thank you for your feedback! We appreciate your input and will use it to improve our service.' } }}",
+        "options": {}
+      },
+      "id": "feedback-response",
+      "name": "Feedback Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1560, 700]
+    }
+  ],
+  "connections": {
+    "Customer Support Webhook": {
+      "main": [
+        [
+          {
+            "node": "Support Request Processor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Support Request Processor": {
+      "main": [
+        [
+          {
+            "node": "Check Validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Validation": {
+      "main": [
+        [
+          {
+            "node": "Validation Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Response Generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Response Generator": {
+      "main": [
+        [
+          {
+            "node": "Response Processor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Response Processor": {
+      "main": [
+        [
+          {
+            "node": "Log Support Ticket",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check Escalation Needed",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Support Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Escalation Needed": {
+      "main": [
+        [
+          {
+            "node": "Escalation Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Support Feedback Webhook": {
+      "main": [
+        [
+          {
+            "node": "Feedback Processor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Feedback Processor": {
+      "main": [
+        [
+          {
+            "node": "Check Feedback Validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Feedback Validation": {
+      "main": [
+        [
+          {
+            "node": "Feedback Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Save Customer Feedback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Customer Feedback": {
+      "main": [
+        [
+          {
+            "node": "Check Negative Feedback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Negative Feedback": {
+      "main": [
+        [
+          {
+            "node": "Negative Feedback Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Feedback Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Negative Feedback Alert": {
+      "main": [
+        [
+          {
+            "node": "Feedback Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 2,
+  "updatedAt": "2024-01-15T10:00:00.000Z",
+  "versionId": "1"
+}

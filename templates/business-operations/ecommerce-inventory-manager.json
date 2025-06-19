@@ -1,0 +1,473 @@
+{
+  "name": "E-commerce Inventory Manager",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 */6 * * *"
+            }
+          ]
+        }
+      },
+      "id": "inventory-check-schedule",
+      "name": "Inventory Check Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "resource": "spreadsheet",
+        "operation": "read",
+        "documentId": "{{ $env.GOOGLE_SHEETS_INVENTORY_ID }}",
+        "sheetName": "Products",
+        "options": {
+          "range": "A:J"
+        }
+      },
+      "id": "fetch-inventory",
+      "name": "Fetch Current Inventory",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process inventory data\nconst inventoryData = $json;\nconst products = [];\n\n// Skip header row and process each product\nfor (let i = 1; i < inventoryData.length; i++) {\n  const row = inventoryData[i];\n  if (row.length < 6) continue; // Skip incomplete rows\n  \n  const product = {\n    id: row[0] || '',\n    name: row[1] || '',\n    sku: row[2] || '',\n    category: row[3] || '',\n    currentStock: parseInt(row[4]) || 0,\n    minThreshold: parseInt(row[5]) || 10,\n    maxThreshold: parseInt(row[6]) || 100,\n    unitPrice: parseFloat(row[7]) || 0,\n    supplier: row[8] || '',\n    lastUpdated: row[9] || new Date().toISOString(),\n    status: 'active'\n  };\n  \n  // Calculate stock status\n  if (product.currentStock <= 0) {\n    product.stockStatus = 'out_of_stock';\n    product.priority = 'critical';\n  } else if (product.currentStock <= product.minThreshold) {\n    product.stockStatus = 'low_stock';\n    product.priority = 'high';\n  } else if (product.currentStock >= product.maxThreshold) {\n    product.stockStatus = 'overstock';\n    product.priority = 'medium';\n  } else {\n    product.stockStatus = 'in_stock';\n    product.priority = 'low';\n  }\n  \n  // Calculate reorder quantity\n  if (product.stockStatus === 'low_stock' || product.stockStatus === 'out_of_stock') {\n    product.reorderQuantity = product.maxThreshold - product.currentStock;\n    product.reorderValue = product.reorderQuantity * product.unitPrice;\n  }\n  \n  // Calculate days of stock remaining (assuming 10 units sold per day average)\n  const avgDailySales = 10;\n  product.daysRemaining = Math.floor(product.currentStock / avgDailySales);\n  \n  products.push(product);\n}\n\n// Generate summary statistics\nconst summary = {\n  totalProducts: products.length,\n  outOfStock: products.filter(p => p.stockStatus === 'out_of_stock').length,\n  lowStock: products.filter(p => p.stockStatus === 'low_stock').length,\n  overstock: products.filter(p => p.stockStatus === 'overstock').length,\n  inStock: products.filter(p => p.stockStatus === 'in_stock').length,\n  totalValue: products.reduce((sum, p) => sum + (p.currentStock * p.unitPrice), 0),\n  reorderValue: products.reduce((sum, p) => sum + (p.reorderValue || 0), 0),\n  criticalItems: products.filter(p => p.priority === 'critical'),\n  highPriorityItems: products.filter(p => p.priority === 'high'),\n  lastChecked: new Date().toISOString()\n};\n\nreturn {\n  json: {\n    products,\n    summary\n  }\n};"
+      },
+      "id": "inventory-analyzer",
+      "name": "Inventory Analyzer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.summary.outOfStock + $json.summary.lowStock }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-alerts-needed",
+      "name": "Check if Alerts Needed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "prompt": "Generate an inventory alert report based on this data:\n\nOut of Stock: {{ $json.summary.outOfStock }} items\nLow Stock: {{ $json.summary.lowStock }} items\nTotal Reorder Value: ${{ $json.summary.reorderValue.toFixed(2) }}\n\nCritical Items:\n{{ $json.summary.criticalItems.map(item => `- ${item.name} (${item.sku}): ${item.currentStock} units`).join('\\n') }}\n\nHigh Priority Items:\n{{ $json.summary.highPriorityItems.slice(0, 5).map(item => `- ${item.name} (${item.sku}): ${item.currentStock}/${item.minThreshold} units`).join('\\n') }}\n\nCreate a professional inventory alert that:\n1. Summarizes the situation\n2. Highlights critical items\n3. Provides reorder recommendations\n4. Suggests immediate actions\n5. Includes financial impact\n\nKeep it concise and actionable.",
+        "options": {
+          "temperature": 0.6,
+          "maxTokens": 400
+        }
+      },
+      "id": "ai-alert-generator",
+      "name": "AI Alert Generator",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "{{ $env.TELEGRAM_INVENTORY_CHAT_ID }}",
+        "text": "🚨 *Inventory Alert*\n\n{{ $json.choices[0].message.content }}\n\n📊 *Quick Stats:*\n• Total Products: {{ $('Inventory Analyzer').item(0).json.summary.totalProducts }}\n• Out of Stock: {{ $('Inventory Analyzer').item(0).json.summary.outOfStock }}\n• Low Stock: {{ $('Inventory Analyzer').item(0).json.summary.lowStock }}\n• Reorder Value: ${{ $('Inventory Analyzer').item(0).json.summary.reorderValue.toFixed(2) }}\n\n⏰ Checked: {{ new Date().toLocaleString() }}",
+        "additionalFields": {
+          "parseMode": "Markdown"
+        }
+      },
+      "id": "telegram-alert",
+      "name": "Send Telegram Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "stock-update",
+        "options": {}
+      },
+      "id": "stock-update-webhook",
+      "name": "Stock Update Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 600],
+      "webhookId": "stock-update-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process stock update\nconst updateData = $json.body;\n\n// Validate required fields\nconst requiredFields = ['sku', 'quantity', 'operation'];\nconst missingFields = requiredFields.filter(field => !updateData[field]);\n\nif (missingFields.length > 0) {\n  return {\n    json: {\n      error: true,\n      message: `Missing required fields: ${missingFields.join(', ')}`,\n      status: 'validation_failed'\n    }\n  };\n}\n\n// Process the update\nconst stockUpdate = {\n  sku: updateData.sku,\n  operation: updateData.operation, // 'add', 'subtract', 'set'\n  quantity: parseInt(updateData.quantity) || 0,\n  reason: updateData.reason || 'manual_update',\n  updatedBy: updateData.updatedBy || 'system',\n  timestamp: new Date().toISOString(),\n  orderId: updateData.orderId || null,\n  notes: updateData.notes || '',\n  location: updateData.location || 'main_warehouse'\n};\n\n// Validate operation\nif (!['add', 'subtract', 'set'].includes(stockUpdate.operation)) {\n  return {\n    json: {\n      error: true,\n      message: 'Invalid operation. Must be: add, subtract, or set',\n      status: 'invalid_operation'\n    }\n  };\n}\n\n// Add transaction ID\nstockUpdate.transactionId = `txn_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;\n\nreturn { json: stockUpdate };"
+      },
+      "id": "stock-update-processor",
+      "name": "Stock Update Processor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 600]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.error }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-update-validation",
+      "name": "Check Update Validation",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 600]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "update-error-response",
+      "name": "Update Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [680, 800]
+    },
+    {
+      "parameters": {
+        "resource": "spreadsheet",
+        "operation": "lookupColumn",
+        "documentId": "{{ $env.GOOGLE_SHEETS_INVENTORY_ID }}",
+        "sheetName": "Products",
+        "lookupColumn": "C",
+        "lookupValue": "={{ $json.sku }}",
+        "options": {}
+      },
+      "id": "find-product",
+      "name": "Find Product by SKU",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [900, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate new stock level\nconst updateData = $('Stock Update Processor').item(0).json;\nconst productData = $json;\n\nif (!productData || productData.length === 0) {\n  return {\n    json: {\n      error: true,\n      message: `Product with SKU ${updateData.sku} not found`,\n      status: 'product_not_found'\n    }\n  };\n}\n\n// Get current stock (column E, index 4)\nconst currentStock = parseInt(productData[4]) || 0;\nlet newStock;\n\nswitch (updateData.operation) {\n  case 'add':\n    newStock = currentStock + updateData.quantity;\n    break;\n  case 'subtract':\n    newStock = Math.max(0, currentStock - updateData.quantity);\n    break;\n  case 'set':\n    newStock = updateData.quantity;\n    break;\n  default:\n    return {\n      json: {\n        error: true,\n        message: 'Invalid operation',\n        status: 'invalid_operation'\n      }\n    };\n}\n\n// Prepare update result\nconst updateResult = {\n  ...updateData,\n  productName: productData[1],\n  previousStock: currentStock,\n  newStock: newStock,\n  stockChange: newStock - currentStock,\n  rowNumber: productData.row || 2, // Default to row 2 if not found\n  success: true,\n  minThreshold: parseInt(productData[5]) || 10,\n  maxThreshold: parseInt(productData[6]) || 100\n};\n\n// Check for alerts\nif (newStock <= 0) {\n  updateResult.alertLevel = 'critical';\n  updateResult.alertMessage = 'Product is now out of stock!';\n} else if (newStock <= updateResult.minThreshold) {\n  updateResult.alertLevel = 'warning';\n  updateResult.alertMessage = 'Product stock is below minimum threshold!';\n} else if (newStock >= updateResult.maxThreshold) {\n  updateResult.alertLevel = 'info';\n  updateResult.alertMessage = 'Product stock is above maximum threshold!';\n} else {\n  updateResult.alertLevel = 'none';\n}\n\nreturn { json: updateResult };"
+      },
+      "id": "calculate-new-stock",
+      "name": "Calculate New Stock",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 600]
+    },
+    {
+      "parameters": {
+        "resource": "spreadsheet",
+        "operation": "update",
+        "documentId": "{{ $env.GOOGLE_SHEETS_INVENTORY_ID }}",
+        "sheetName": "Products",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Current Stock": "={{ $json.newStock }}",
+            "Last Updated": "={{ $json.timestamp }}"
+          }
+        },
+        "options": {
+          "lookupColumn": "SKU",
+          "lookupValue": "={{ $json.sku }}"
+        }
+      },
+      "id": "update-inventory",
+      "name": "Update Inventory Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1340, 600]
+    },
+    {
+      "parameters": {
+        "resource": "spreadsheet",
+        "operation": "appendOrUpdate",
+        "documentId": "{{ $env.GOOGLE_SHEETS_INVENTORY_ID }}",
+        "sheetName": "Stock Transactions",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ $json.timestamp }}",
+            "Transaction ID": "={{ $json.transactionId }}",
+            "SKU": "={{ $json.sku }}",
+            "Product Name": "={{ $json.productName }}",
+            "Operation": "={{ $json.operation }}",
+            "Quantity": "={{ $json.quantity }}",
+            "Previous Stock": "={{ $json.previousStock }}",
+            "New Stock": "={{ $json.newStock }}",
+            "Stock Change": "={{ $json.stockChange }}",
+            "Reason": "={{ $json.reason }}",
+            "Updated By": "={{ $json.updatedBy }}",
+            "Order ID": "={{ $json.orderId || 'N/A' }}",
+            "Location": "={{ $json.location }}",
+            "Notes": "={{ $json.notes }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "log-transaction",
+      "name": "Log Stock Transaction",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1560, 600]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.alertLevel }}",
+              "rightValue": "none",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-stock-alert",
+      "name": "Check Stock Alert",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1340, 800]
+    },
+    {
+      "parameters": {
+        "chatId": "{{ $env.TELEGRAM_INVENTORY_CHAT_ID }}",
+        "text": "{{ $json.alertLevel === 'critical' ? '🚨' : $json.alertLevel === 'warning' ? '⚠️' : 'ℹ️' }} *Stock Update Alert*\n\n📦 *Product:* {{ $json.productName }}\n🏷️ *SKU:* {{ $json.sku }}\n📊 *Stock Change:* {{ $json.previousStock }} → {{ $json.newStock }} ({{ $json.stockChange > 0 ? '+' : '' }}{{ $json.stockChange }})\n🔄 *Operation:* {{ $json.operation.toUpperCase() }} {{ $json.quantity }}\n\n{{ $json.alertMessage }}\n\n📝 *Reason:* {{ $json.reason }}\n👤 *Updated by:* {{ $json.updatedBy }}\n🆔 *Transaction:* {{ $json.transactionId }}",
+        "additionalFields": {
+          "parseMode": "Markdown"
+        }
+      },
+      "id": "stock-alert-notification",
+      "name": "Stock Alert Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1560, 800]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: $json.success, transactionId: $json.transactionId, sku: $json.sku, previousStock: $json.previousStock, newStock: $json.newStock, alertLevel: $json.alertLevel, alertMessage: $json.alertMessage || 'Stock updated successfully' } }}",
+        "options": {}
+      },
+      "id": "stock-update-response",
+      "name": "Stock Update Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1780, 600]
+    }
+  ],
+  "connections": {
+    "Inventory Check Schedule": {
+      "main": [
+        [
+          {
+            "node": "Fetch Current Inventory",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Current Inventory": {
+      "main": [
+        [
+          {
+            "node": "Inventory Analyzer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inventory Analyzer": {
+      "main": [
+        [
+          {
+            "node": "Check if Alerts Needed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if Alerts Needed": {
+      "main": [
+        [
+          {
+            "node": "AI Alert Generator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Alert Generator": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stock Update Webhook": {
+      "main": [
+        [
+          {
+            "node": "Stock Update Processor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stock Update Processor": {
+      "main": [
+        [
+          {
+            "node": "Check Update Validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Update Validation": {
+      "main": [
+        [
+          {
+            "node": "Update Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Find Product by SKU",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Product by SKU": {
+      "main": [
+        [
+          {
+            "node": "Calculate New Stock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate New Stock": {
+      "main": [
+        [
+          {
+            "node": "Update Inventory Sheet",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check Stock Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Inventory Sheet": {
+      "main": [
+        [
+          {
+            "node": "Log Stock Transaction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Stock Transaction": {
+      "main": [
+        [
+          {
+            "node": "Stock Update Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Stock Alert": {
+      "main": [
+        [
+          {
+            "node": "Stock Alert Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 2,
+  "updatedAt": "2024-01-15T10:00:00.000Z",
+  "versionId": "1"
+}

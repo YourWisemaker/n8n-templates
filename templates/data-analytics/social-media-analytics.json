@@ -1,0 +1,510 @@
+{
+  "name": "Social Media Analytics Dashboard",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "daily-analytics-trigger",
+      "name": "Daily Analytics Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "tweet",
+        "operation": "search",
+        "searchText": "{{ $vars.BRAND_MENTIONS || '@yourcompany OR #yourcompany' }}",
+        "returnAll": false,
+        "limit": 100,
+        "additionalFields": {
+          "expansions": [
+            "author_id",
+            "public_metrics"
+          ],
+          "tweetFields": [
+            "created_at",
+            "public_metrics",
+            "context_annotations"
+          ]
+        }
+      },
+      "id": "fetch-twitter-data",
+      "name": "Fetch Twitter Data",
+      "type": "n8n-nodes-base.twitter",
+      "typeVersion": 2,
+      "position": [460, 200]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "post",
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": 50,
+        "filters": {
+          "fields": [
+            "id",
+            "message",
+            "created_time",
+            "likes",
+            "comments",
+            "shares"
+          ]
+        }
+      },
+      "id": "fetch-facebook-data",
+      "name": "Fetch Facebook Data",
+      "type": "n8n-nodes-base.facebookGraphApi",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "post",
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": 50,
+        "additionalFields": {
+          "fields": "id,caption,media_type,like_count,comments_count,timestamp"
+        }
+      },
+      "id": "fetch-instagram-data",
+      "name": "Fetch Instagram Data",
+      "type": "n8n-nodes-base.instagram",
+      "typeVersion": 1,
+      "position": [460, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process and analyze Twitter data\nconst tweets = $input.all();\nconst analytics = {\n  platform: 'twitter',\n  date: new Date().toISOString().split('T')[0],\n  totalTweets: tweets.length,\n  totalLikes: 0,\n  totalRetweets: 0,\n  totalReplies: 0,\n  avgEngagement: 0,\n  topTweets: [],\n  sentimentScore: 0,\n  hashtagAnalysis: {},\n  mentionAnalysis: {},\n  timeAnalysis: {}\n};\n\nif (tweets.length > 0) {\n  // Calculate metrics\n  tweets.forEach(tweet => {\n    const metrics = tweet.json.public_metrics || {};\n    analytics.totalLikes += metrics.like_count || 0;\n    analytics.totalRetweets += metrics.retweet_count || 0;\n    analytics.totalReplies += metrics.reply_count || 0;\n    \n    // Extract hashtags\n    const text = tweet.json.text || '';\n    const hashtags = text.match(/#\\w+/g) || [];\n    hashtags.forEach(tag => {\n      analytics.hashtagAnalysis[tag] = (analytics.hashtagAnalysis[tag] || 0) + 1;\n    });\n    \n    // Extract mentions\n    const mentions = text.match(/@\\w+/g) || [];\n    mentions.forEach(mention => {\n      analytics.mentionAnalysis[mention] = (analytics.mentionAnalysis[mention] || 0) + 1;\n    });\n    \n    // Time analysis\n    const hour = new Date(tweet.json.created_at).getHours();\n    analytics.timeAnalysis[hour] = (analytics.timeAnalysis[hour] || 0) + 1;\n  });\n  \n  // Calculate average engagement\n  const totalEngagement = analytics.totalLikes + analytics.totalRetweets + analytics.totalReplies;\n  analytics.avgEngagement = Math.round(totalEngagement / tweets.length * 100) / 100;\n  \n  // Find top tweets by engagement\n  analytics.topTweets = tweets\n    .map(tweet => ({\n      id: tweet.json.id,\n      text: tweet.json.text?.substring(0, 100) + '...',\n      engagement: (tweet.json.public_metrics?.like_count || 0) + \n                 (tweet.json.public_metrics?.retweet_count || 0) + \n                 (tweet.json.public_metrics?.reply_count || 0),\n      likes: tweet.json.public_metrics?.like_count || 0,\n      retweets: tweet.json.public_metrics?.retweet_count || 0\n    }))\n    .sort((a, b) => b.engagement - a.engagement)\n    .slice(0, 5);\n    \n  // Simple sentiment analysis (basic keyword approach)\n  const positiveWords = ['good', 'great', 'excellent', 'amazing', 'love', 'awesome', 'fantastic'];\n  const negativeWords = ['bad', 'terrible', 'awful', 'hate', 'horrible', 'worst', 'disappointing'];\n  \n  let sentimentSum = 0;\n  tweets.forEach(tweet => {\n    const text = (tweet.json.text || '').toLowerCase();\n    const positiveCount = positiveWords.filter(word => text.includes(word)).length;\n    const negativeCount = negativeWords.filter(word => text.includes(word)).length;\n    sentimentSum += positiveCount - negativeCount;\n  });\n  \n  analytics.sentimentScore = Math.round((sentimentSum / tweets.length) * 100) / 100;\n}\n\nreturn { json: analytics };"
+      },
+      "id": "analyze-twitter-data",
+      "name": "Analyze Twitter Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process and analyze Facebook data\nconst posts = $input.all();\nconst analytics = {\n  platform: 'facebook',\n  date: new Date().toISOString().split('T')[0],\n  totalPosts: posts.length,\n  totalLikes: 0,\n  totalComments: 0,\n  totalShares: 0,\n  avgEngagement: 0,\n  topPosts: [],\n  postTypeAnalysis: {},\n  timeAnalysis: {}\n};\n\nif (posts.length > 0) {\n  // Calculate metrics\n  posts.forEach(post => {\n    analytics.totalLikes += post.json.likes?.summary?.total_count || 0;\n    analytics.totalComments += post.json.comments?.summary?.total_count || 0;\n    analytics.totalShares += post.json.shares?.count || 0;\n    \n    // Post type analysis\n    const hasImage = post.json.attachments?.data?.some(att => att.type === 'photo');\n    const hasVideo = post.json.attachments?.data?.some(att => att.type === 'video_inline');\n    const hasLink = post.json.attachments?.data?.some(att => att.type === 'share');\n    \n    let postType = 'text';\n    if (hasVideo) postType = 'video';\n    else if (hasImage) postType = 'image';\n    else if (hasLink) postType = 'link';\n    \n    analytics.postTypeAnalysis[postType] = (analytics.postTypeAnalysis[postType] || 0) + 1;\n    \n    // Time analysis\n    const hour = new Date(post.json.created_time).getHours();\n    analytics.timeAnalysis[hour] = (analytics.timeAnalysis[hour] || 0) + 1;\n  });\n  \n  // Calculate average engagement\n  const totalEngagement = analytics.totalLikes + analytics.totalComments + analytics.totalShares;\n  analytics.avgEngagement = Math.round(totalEngagement / posts.length * 100) / 100;\n  \n  // Find top posts by engagement\n  analytics.topPosts = posts\n    .map(post => ({\n      id: post.json.id,\n      message: post.json.message?.substring(0, 100) + '...' || 'No message',\n      engagement: (post.json.likes?.summary?.total_count || 0) + \n                 (post.json.comments?.summary?.total_count || 0) + \n                 (post.json.shares?.count || 0),\n      likes: post.json.likes?.summary?.total_count || 0,\n      comments: post.json.comments?.summary?.total_count || 0,\n      shares: post.json.shares?.count || 0\n    }))\n    .sort((a, b) => b.engagement - a.engagement)\n    .slice(0, 5);\n}\n\nreturn { json: analytics };"
+      },
+      "id": "analyze-facebook-data",
+      "name": "Analyze Facebook Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process and analyze Instagram data\nconst posts = $input.all();\nconst analytics = {\n  platform: 'instagram',\n  date: new Date().toISOString().split('T')[0],\n  totalPosts: posts.length,\n  totalLikes: 0,\n  totalComments: 0,\n  avgEngagement: 0,\n  topPosts: [],\n  mediaTypeAnalysis: {},\n  timeAnalysis: {}\n};\n\nif (posts.length > 0) {\n  // Calculate metrics\n  posts.forEach(post => {\n    analytics.totalLikes += post.json.like_count || 0;\n    analytics.totalComments += post.json.comments_count || 0;\n    \n    // Media type analysis\n    const mediaType = post.json.media_type || 'unknown';\n    analytics.mediaTypeAnalysis[mediaType] = (analytics.mediaTypeAnalysis[mediaType] || 0) + 1;\n    \n    // Time analysis\n    const hour = new Date(post.json.timestamp).getHours();\n    analytics.timeAnalysis[hour] = (analytics.timeAnalysis[hour] || 0) + 1;\n  });\n  \n  // Calculate average engagement\n  const totalEngagement = analytics.totalLikes + analytics.totalComments;\n  analytics.avgEngagement = Math.round(totalEngagement / posts.length * 100) / 100;\n  \n  // Find top posts by engagement\n  analytics.topPosts = posts\n    .map(post => ({\n      id: post.json.id,\n      caption: post.json.caption?.substring(0, 100) + '...' || 'No caption',\n      engagement: (post.json.like_count || 0) + (post.json.comments_count || 0),\n      likes: post.json.like_count || 0,\n      comments: post.json.comments_count || 0,\n      mediaType: post.json.media_type\n    }))\n    .sort((a, b) => b.engagement - a.engagement)\n    .slice(0, 5);\n}\n\nreturn { json: analytics };"
+      },
+      "id": "analyze-instagram-data",
+      "name": "Analyze Instagram Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Combine analytics from all platforms\nconst twitterData = $input.first().json;\nconst facebookData = $input.all()[1]?.json || {};\nconst instagramData = $input.all()[2]?.json || {};\n\nconst combinedAnalytics = {\n  reportDate: new Date().toISOString().split('T')[0],\n  reportTime: new Date().toISOString(),\n  summary: {\n    totalPosts: (twitterData.totalTweets || 0) + (facebookData.totalPosts || 0) + (instagramData.totalPosts || 0),\n    totalEngagement: (twitterData.totalLikes + twitterData.totalRetweets + twitterData.totalReplies || 0) + \n                    (facebookData.totalLikes + facebookData.totalComments + facebookData.totalShares || 0) + \n                    (instagramData.totalLikes + instagramData.totalComments || 0),\n    avgEngagementRate: 0\n  },\n  platforms: {\n    twitter: twitterData,\n    facebook: facebookData,\n    instagram: instagramData\n  },\n  insights: [],\n  recommendations: []\n};\n\n// Calculate overall engagement rate\nif (combinedAnalytics.summary.totalPosts > 0) {\n  combinedAnalytics.summary.avgEngagementRate = Math.round(\n    (combinedAnalytics.summary.totalEngagement / combinedAnalytics.summary.totalPosts) * 100\n  ) / 100;\n}\n\n// Generate insights\nconst insights = [];\n\n// Platform performance comparison\nconst platformEngagement = {\n  twitter: twitterData.avgEngagement || 0,\n  facebook: facebookData.avgEngagement || 0,\n  instagram: instagramData.avgEngagement || 0\n};\n\nconst bestPlatform = Object.keys(platformEngagement).reduce((a, b) => \n  platformEngagement[a] > platformEngagement[b] ? a : b\n);\n\ninsights.push(`${bestPlatform.charAt(0).toUpperCase() + bestPlatform.slice(1)} has the highest engagement rate (${platformEngagement[bestPlatform]})`);\n\n// Sentiment analysis (Twitter only)\nif (twitterData.sentimentScore !== undefined) {\n  const sentiment = twitterData.sentimentScore > 0.5 ? 'positive' : \n                   twitterData.sentimentScore < -0.5 ? 'negative' : 'neutral';\n  insights.push(`Overall Twitter sentiment is ${sentiment} (score: ${twitterData.sentimentScore})`);\n}\n\n// Top hashtags (Twitter)\nif (twitterData.hashtagAnalysis && Object.keys(twitterData.hashtagAnalysis).length > 0) {\n  const topHashtag = Object.keys(twitterData.hashtagAnalysis).reduce((a, b) => \n    twitterData.hashtagAnalysis[a] > twitterData.hashtagAnalysis[b] ? a : b\n  );\n  insights.push(`Most used hashtag: ${topHashtag} (${twitterData.hashtagAnalysis[topHashtag]} times)`);\n}\n\ncombinedAnalytics.insights = insights;\n\n// Generate recommendations\nconst recommendations = [];\n\nif (combinedAnalytics.summary.avgEngagementRate < 2) {\n  recommendations.push('Consider posting more engaging content to improve overall engagement rate');\n}\n\nif (twitterData.sentimentScore < 0) {\n  recommendations.push('Monitor Twitter mentions more closely and address negative sentiment');\n}\n\nif (instagramData.totalPosts < 5) {\n  recommendations.push('Increase Instagram posting frequency for better visibility');\n}\n\ncombinedAnalytics.recommendations = recommendations;\n\nreturn { json: combinedAnalytics };"
+      },
+      "id": "combine-analytics",
+      "name": "Combine Analytics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "spreadsheet",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms",
+          "mode": "list",
+          "cachedResultName": "Social Media Analytics"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Daily Analytics"
+        },
+        "columnToMatchOn": "reportDate",
+        "valueInputMode": "defineBelow",
+        "fieldsUi": {
+          "values": [
+            {
+              "fieldId": "reportDate",
+              "fieldValue": "={{ $json.reportDate }}"
+            },
+            {
+              "fieldId": "reportTime",
+              "fieldValue": "={{ $json.reportTime }}"
+            },
+            {
+              "fieldId": "totalPosts",
+              "fieldValue": "={{ $json.summary.totalPosts }}"
+            },
+            {
+              "fieldId": "totalEngagement",
+              "fieldValue": "={{ $json.summary.totalEngagement }}"
+            },
+            {
+              "fieldId": "avgEngagementRate",
+              "fieldValue": "={{ $json.summary.avgEngagementRate }}"
+            },
+            {
+              "fieldId": "twitterPosts",
+              "fieldValue": "={{ $json.platforms.twitter.totalTweets || 0 }}"
+            },
+            {
+              "fieldId": "twitterEngagement",
+              "fieldValue": "={{ $json.platforms.twitter.avgEngagement || 0 }}"
+            },
+            {
+              "fieldId": "facebookPosts",
+              "fieldValue": "={{ $json.platforms.facebook.totalPosts || 0 }}"
+            },
+            {
+              "fieldId": "facebookEngagement",
+              "fieldValue": "={{ $json.platforms.facebook.avgEngagement || 0 }}"
+            },
+            {
+              "fieldId": "instagramPosts",
+              "fieldValue": "={{ $json.platforms.instagram.totalPosts || 0 }}"
+            },
+            {
+              "fieldId": "instagramEngagement",
+              "fieldValue": "={{ $json.platforms.instagram.avgEngagement || 0 }}"
+            },
+            {
+              "fieldId": "sentimentScore",
+              "fieldValue": "={{ $json.platforms.twitter.sentimentScore || 0 }}"
+            },
+            {
+              "fieldId": "insights",
+              "fieldValue": "={{ $json.insights.join('; ') }}"
+            },
+            {
+              "fieldId": "recommendations",
+              "fieldValue": "={{ $json.recommendations.join('; ') }}"
+            }
+          ]
+        }
+      },
+      "id": "save-analytics",
+      "name": "Save Analytics",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "options": {
+          "temperature": 0.7
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a social media analytics expert. Create a comprehensive daily report based on the provided analytics data. Include key metrics, insights, and actionable recommendations. Format the report in a professional but engaging manner."
+            },
+            {
+              "role": "user",
+              "content": "Create a daily social media analytics report based on this data:\n\nSummary:\n- Total Posts: {{ $json.summary.totalPosts }}\n- Total Engagement: {{ $json.summary.totalEngagement }}\n- Average Engagement Rate: {{ $json.summary.avgEngagementRate }}%\n\nPlatform Performance:\n- Twitter: {{ $json.platforms.twitter.totalTweets || 0 }} tweets, {{ $json.platforms.twitter.avgEngagement || 0 }} avg engagement\n- Facebook: {{ $json.platforms.facebook.totalPosts || 0 }} posts, {{ $json.platforms.facebook.avgEngagement || 0 }} avg engagement\n- Instagram: {{ $json.platforms.instagram.totalPosts || 0 }} posts, {{ $json.platforms.instagram.avgEngagement || 0 }} avg engagement\n\nKey Insights:\n{{ $json.insights.join('\\n') }}\n\nRecommendations:\n{{ $json.recommendations.join('\\n') }}\n\nPlease create a detailed report with analysis and next steps."
+            }
+          ]
+        }
+      },
+      "id": "generate-report",
+      "name": "Generate AI Report",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "accessToken",
+        "chatId": "-1001234567890",
+        "text": "📊 *Daily Social Media Analytics Report*\n\n📈 *Summary:*\n• Total Posts: {{ $json.summary.totalPosts }}\n• Total Engagement: {{ $json.summary.totalEngagement }}\n• Avg Engagement Rate: {{ $json.summary.avgEngagementRate }}%\n\n🐦 *Twitter:* {{ $json.platforms.twitter.totalTweets || 0 }} tweets ({{ $json.platforms.twitter.avgEngagement || 0 }} avg)\n📘 *Facebook:* {{ $json.platforms.facebook.totalPosts || 0 }} posts ({{ $json.platforms.facebook.avgEngagement || 0 }} avg)\n📸 *Instagram:* {{ $json.platforms.instagram.totalPosts || 0 }} posts ({{ $json.platforms.instagram.avgEngagement || 0 }} avg)\n\n💡 *Key Insights:*\n{{ $json.insights.map(insight => `• ${insight}`).join('\\n') }}\n\n🎯 *Recommendations:*\n{{ $json.recommendations.map(rec => `• ${rec}`).join('\\n') }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "send-summary-notification",
+      "name": "Send Summary Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1560, 200]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "sendTo": "{{ $vars.MARKETING_EMAIL || 'marketing@company.com' }}",
+        "subject": "Daily Social Media Analytics Report - {{ $json.reportDate }}",
+        "emailType": "html",
+        "message": "<h2>Daily Social Media Analytics Report</h2>\n<p><strong>Date:</strong> {{ $json.reportDate }}</p>\n\n<h3>Executive Summary</h3>\n<ul>\n<li><strong>Total Posts:</strong> {{ $json.summary.totalPosts }}</li>\n<li><strong>Total Engagement:</strong> {{ $json.summary.totalEngagement }}</li>\n<li><strong>Average Engagement Rate:</strong> {{ $json.summary.avgEngagementRate }}%</li>\n</ul>\n\n<h3>Platform Performance</h3>\n<table border=\"1\" style=\"border-collapse: collapse; width: 100%;\">\n<tr>\n<th>Platform</th>\n<th>Posts</th>\n<th>Avg Engagement</th>\n</tr>\n<tr>\n<td>Twitter</td>\n<td>{{ $json.platforms.twitter.totalTweets || 0 }}</td>\n<td>{{ $json.platforms.twitter.avgEngagement || 0 }}</td>\n</tr>\n<tr>\n<td>Facebook</td>\n<td>{{ $json.platforms.facebook.totalPosts || 0 }}</td>\n<td>{{ $json.platforms.facebook.avgEngagement || 0 }}</td>\n</tr>\n<tr>\n<td>Instagram</td>\n<td>{{ $json.platforms.instagram.totalPosts || 0 }}</td>\n<td>{{ $json.platforms.instagram.avgEngagement || 0 }}</td>\n</tr>\n</table>\n\n<h3>AI-Generated Report</h3>\n<div style=\"background-color: #f5f5f5; padding: 15px; border-radius: 5px;\">\n{{ $('Generate AI Report').first().json.choices[0].message.content.replace(/\\n/g, '<br>') }}\n</div>\n\n<h3>Key Insights</h3>\n<ul>\n{{ $json.insights.map(insight => `<li>${insight}</li>`).join('') }}\n</ul>\n\n<h3>Recommendations</h3>\n<ul>\n{{ $json.recommendations.map(rec => `<li>${rec}</li>`).join('') }}\n</ul>\n\n<p><em>This report was automatically generated by your n8n Social Media Analytics workflow.</em></p>"
+      },
+      "id": "send-email-report",
+      "name": "Send Email Report",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1560, 400]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 18 * * 0"
+            }
+          ]
+        }
+      },
+      "id": "weekly-report-trigger",
+      "name": "Weekly Report Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 600]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "spreadsheet",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms",
+          "mode": "list",
+          "cachedResultName": "Social Media Analytics"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Daily Analytics"
+        },
+        "options": {
+          "range": "A:N"
+        }
+      },
+      "id": "get-weekly-data",
+      "name": "Get Weekly Data",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [460, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate weekly analytics summary\nconst data = $input.all();\nconst today = new Date();\nconst weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);\n\n// Filter data for the last 7 days\nconst weeklyData = data.filter(row => {\n  const rowDate = new Date(row.json.reportDate);\n  return rowDate >= weekAgo && rowDate <= today;\n});\n\nconst weeklyAnalytics = {\n  weekStartDate: weekAgo.toISOString().split('T')[0],\n  weekEndDate: today.toISOString().split('T')[0],\n  totalDays: weeklyData.length,\n  summary: {\n    totalPosts: weeklyData.reduce((sum, day) => sum + (day.json.totalPosts || 0), 0),\n    totalEngagement: weeklyData.reduce((sum, day) => sum + (day.json.totalEngagement || 0), 0),\n    avgDailyPosts: 0,\n    avgDailyEngagement: 0,\n    avgEngagementRate: 0\n  },\n  platformTrends: {\n    twitter: {\n      totalPosts: weeklyData.reduce((sum, day) => sum + (day.json.twitterPosts || 0), 0),\n      avgEngagement: 0\n    },\n    facebook: {\n      totalPosts: weeklyData.reduce((sum, day) => sum + (day.json.facebookPosts || 0), 0),\n      avgEngagement: 0\n    },\n    instagram: {\n      totalPosts: weeklyData.reduce((sum, day) => sum + (day.json.instagramPosts || 0), 0),\n      avgEngagement: 0\n    }\n  },\n  bestDay: null,\n  worstDay: null,\n  trends: []\n};\n\nif (weeklyData.length > 0) {\n  // Calculate averages\n  weeklyAnalytics.summary.avgDailyPosts = Math.round(weeklyAnalytics.summary.totalPosts / weeklyData.length * 100) / 100;\n  weeklyAnalytics.summary.avgDailyEngagement = Math.round(weeklyAnalytics.summary.totalEngagement / weeklyData.length * 100) / 100;\n  \n  if (weeklyAnalytics.summary.totalPosts > 0) {\n    weeklyAnalytics.summary.avgEngagementRate = Math.round(weeklyAnalytics.summary.totalEngagement / weeklyAnalytics.summary.totalPosts * 100) / 100;\n  }\n  \n  // Platform engagement averages\n  const twitterEngagements = weeklyData.map(d => d.json.twitterEngagement || 0).filter(e => e > 0);\n  const facebookEngagements = weeklyData.map(d => d.json.facebookEngagement || 0).filter(e => e > 0);\n  const instagramEngagements = weeklyData.map(d => d.json.instagramEngagement || 0).filter(e => e > 0);\n  \n  weeklyAnalytics.platformTrends.twitter.avgEngagement = twitterEngagements.length > 0 ? \n    Math.round(twitterEngagements.reduce((a, b) => a + b, 0) / twitterEngagements.length * 100) / 100 : 0;\n  weeklyAnalytics.platformTrends.facebook.avgEngagement = facebookEngagements.length > 0 ? \n    Math.round(facebookEngagements.reduce((a, b) => a + b, 0) / facebookEngagements.length * 100) / 100 : 0;\n  weeklyAnalytics.platformTrends.instagram.avgEngagement = instagramEngagements.length > 0 ? \n    Math.round(instagramEngagements.reduce((a, b) => a + b, 0) / instagramEngagements.length * 100) / 100 : 0;\n  \n  // Find best and worst performing days\n  const sortedByEngagement = weeklyData.sort((a, b) => (b.json.totalEngagement || 0) - (a.json.totalEngagement || 0));\n  weeklyAnalytics.bestDay = {\n    date: sortedByEngagement[0].json.reportDate,\n    engagement: sortedByEngagement[0].json.totalEngagement || 0,\n    posts: sortedByEngagement[0].json.totalPosts || 0\n  };\n  weeklyAnalytics.worstDay = {\n    date: sortedByEngagement[sortedByEngagement.length - 1].json.reportDate,\n    engagement: sortedByEngagement[sortedByEngagement.length - 1].json.totalEngagement || 0,\n    posts: sortedByEngagement[sortedByEngagement.length - 1].json.totalPosts || 0\n  };\n  \n  // Generate trends\n  const trends = [];\n  \n  // Engagement trend\n  const firstHalf = weeklyData.slice(0, Math.ceil(weeklyData.length / 2));\n  const secondHalf = weeklyData.slice(Math.ceil(weeklyData.length / 2));\n  \n  const firstHalfAvg = firstHalf.reduce((sum, day) => sum + (day.json.avgEngagementRate || 0), 0) / firstHalf.length;\n  const secondHalfAvg = secondHalf.reduce((sum, day) => sum + (day.json.avgEngagementRate || 0), 0) / secondHalf.length;\n  \n  if (secondHalfAvg > firstHalfAvg * 1.1) {\n    trends.push('Engagement rate is trending upward');\n  } else if (secondHalfAvg < firstHalfAvg * 0.9) {\n    trends.push('Engagement rate is trending downward');\n  } else {\n    trends.push('Engagement rate is stable');\n  }\n  \n  weeklyAnalytics.trends = trends;\n}\n\nreturn { json: weeklyAnalytics };"
+      },
+      "id": "analyze-weekly-trends",
+      "name": "Analyze Weekly Trends",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 600]
+    },
+    {
+      "parameters": {
+        "authentication": "accessToken",
+        "chatId": "-1001234567890",
+        "text": "📊 *Weekly Social Media Analytics Summary*\n\n📅 *Week:* {{ $json.weekStartDate }} to {{ $json.weekEndDate }}\n\n📈 *Weekly Summary:*\n• Total Posts: {{ $json.summary.totalPosts }}\n• Total Engagement: {{ $json.summary.totalEngagement }}\n• Avg Daily Posts: {{ $json.summary.avgDailyPosts }}\n• Avg Engagement Rate: {{ $json.summary.avgEngagementRate }}%\n\n🏆 *Best Day:* {{ $json.bestDay.date }} ({{ $json.bestDay.engagement }} engagement)\n📉 *Worst Day:* {{ $json.worstDay.date }} ({{ $json.worstDay.engagement }} engagement)\n\n📱 *Platform Performance:*\n🐦 Twitter: {{ $json.platformTrends.twitter.totalPosts }} posts ({{ $json.platformTrends.twitter.avgEngagement }} avg)\n📘 Facebook: {{ $json.platformTrends.facebook.totalPosts }} posts ({{ $json.platformTrends.facebook.avgEngagement }} avg)\n📸 Instagram: {{ $json.platformTrends.instagram.totalPosts }} posts ({{ $json.platformTrends.instagram.avgEngagement }} avg)\n\n📊 *Trends:*\n{{ $json.trends.map(trend => `• ${trend}`).join('\\n') }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "send-weekly-summary",
+      "name": "Send Weekly Summary",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [900, 600]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Daily Analytics Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Twitter Data",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Facebook Data",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Instagram Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Twitter Data": {
+      "main": [
+        [
+          {
+            "node": "Analyze Twitter Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Facebook Data": {
+      "main": [
+        [
+          {
+            "node": "Analyze Facebook Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Instagram Data": {
+      "main": [
+        [
+          {
+            "node": "Analyze Instagram Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Twitter Data": {
+      "main": [
+        [
+          {
+            "node": "Combine Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Facebook Data": {
+      "main": [
+        [
+          {
+            "node": "Combine Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Instagram Data": {
+      "main": [
+        [
+          {
+            "node": "Combine Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine Analytics": {
+      "main": [
+        [
+          {
+            "node": "Save Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Analytics": {
+      "main": [
+        [
+          {
+            "node": "Generate AI Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate AI Report": {
+      "main": [
+        [
+          {
+            "node": "Send Summary Notification",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Email Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Weekly Report Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Weekly Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Weekly Data": {
+      "main": [
+        [
+          {
+            "node": "Analyze Weekly Trends",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Weekly Trends": {
+      "main": [
+        [
+          {
+            "node": "Send Weekly Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "12345"
+  },
+  "id": "social-media-analytics",
+  "tags": []
+}

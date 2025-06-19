@@ -1,0 +1,478 @@
+{
+  "name": "Crypto Portfolio Tracker",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/15 * * * *"
+            }
+          ]
+        }
+      },
+      "id": "price-check-schedule",
+      "name": "Price Check Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Define portfolio cryptocurrencies\nconst portfolio = [\n  { symbol: 'BTC', name: 'Bitcoin', holdings: 0.5 },\n  { symbol: 'ETH', name: 'Ethereum', holdings: 2.0 },\n  { symbol: 'ADA', name: 'Cardano', holdings: 1000 },\n  { symbol: 'DOT', name: 'Polkadot', holdings: 50 },\n  { symbol: 'LINK', name: 'Chainlink', holdings: 100 },\n  { symbol: 'SOL', name: 'Solana', holdings: 10 },\n  { symbol: 'MATIC', name: 'Polygon', holdings: 500 },\n  { symbol: 'AVAX', name: 'Avalanche', holdings: 25 }\n];\n\n// Create API requests for each cryptocurrency\nconst apiRequests = portfolio.map(crypto => ({\n  symbol: crypto.symbol,\n  name: crypto.name,\n  holdings: crypto.holdings,\n  apiUrl: `https://api.coingecko.com/api/v3/simple/price?ids=${crypto.name.toLowerCase()}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true&include_24hr_vol=true`,\n  timestamp: new Date().toISOString()\n}));\n\nreturn apiRequests.map(request => ({ json: request }));"
+      },
+      "id": "portfolio-setup",
+      "name": "Portfolio Setup",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.apiUrl }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "fetch-crypto-prices",
+      "name": "Fetch Crypto Prices",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process cryptocurrency price data\nconst portfolioItem = $('Portfolio Setup').item($itemIndex).json;\nconst priceData = $json;\n\n// Extract price information\nconst cryptoKey = Object.keys(priceData)[0];\nconst cryptoData = priceData[cryptoKey];\n\nif (!cryptoData) {\n  return {\n    json: {\n      error: true,\n      message: `No price data found for ${portfolioItem.symbol}`,\n      symbol: portfolioItem.symbol\n    }\n  };\n}\n\n// Calculate portfolio metrics\nconst currentPrice = cryptoData.usd || 0;\nconst change24h = cryptoData.usd_24h_change || 0;\nconst marketCap = cryptoData.usd_market_cap || 0;\nconst volume24h = cryptoData.usd_24h_vol || 0;\n\nconst portfolioValue = currentPrice * portfolioItem.holdings;\nconst change24hValue = (portfolioValue * change24h) / 100;\n\n// Determine trend and signals\nlet trend = 'neutral';\nlet signal = 'hold';\n\nif (change24h > 5) {\n  trend = 'strong_bullish';\n  signal = 'strong_buy';\n} else if (change24h > 2) {\n  trend = 'bullish';\n  signal = 'buy';\n} else if (change24h < -5) {\n  trend = 'strong_bearish';\n  signal = 'strong_sell';\n} else if (change24h < -2) {\n  trend = 'bearish';\n  signal = 'sell';\n}\n\n// Risk assessment\nlet riskLevel = 'medium';\nif (Math.abs(change24h) > 10) {\n  riskLevel = 'high';\n} else if (Math.abs(change24h) < 2) {\n  riskLevel = 'low';\n}\n\n// Performance classification\nlet performance = 'neutral';\nif (change24h > 0) {\n  performance = 'positive';\n} else if (change24h < 0) {\n  performance = 'negative';\n}\n\nconst result = {\n  symbol: portfolioItem.symbol,\n  name: portfolioItem.name,\n  holdings: portfolioItem.holdings,\n  currentPrice: currentPrice,\n  portfolioValue: portfolioValue,\n  change24h: change24h,\n  change24hValue: change24hValue,\n  marketCap: marketCap,\n  volume24h: volume24h,\n  trend: trend,\n  signal: signal,\n  riskLevel: riskLevel,\n  performance: performance,\n  timestamp: new Date().toISOString(),\n  priceFormatted: `$${currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`,\n  valueFormatted: `$${portfolioValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,\n  changeFormatted: `${change24h > 0 ? '+' : ''}${change24h.toFixed(2)}%`,\n  marketCapFormatted: `$${(marketCap / 1000000000).toFixed(2)}B`\n};\n\nreturn { json: result };"
+      },
+      "id": "price-processor",
+      "name": "Price Data Processor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate all portfolio data\nconst allItems = $input.all();\nconst validItems = allItems.filter(item => !item.json.error);\nconst errorItems = allItems.filter(item => item.json.error);\n\nif (validItems.length === 0) {\n  return {\n    json: {\n      error: true,\n      message: 'No valid price data received',\n      timestamp: new Date().toISOString()\n    }\n  };\n}\n\n// Calculate total portfolio metrics\nconst totalValue = validItems.reduce((sum, item) => sum + item.json.portfolioValue, 0);\nconst totalChange24hValue = validItems.reduce((sum, item) => sum + item.json.change24hValue, 0);\nconst totalChange24hPercent = totalValue > 0 ? (totalChange24hValue / (totalValue - totalChange24hValue)) * 100 : 0;\n\n// Find best and worst performers\nconst sortedByPerformance = validItems.sort((a, b) => b.json.change24h - a.json.change24h);\nconst bestPerformer = sortedByPerformance[0]?.json;\nconst worstPerformer = sortedByPerformance[sortedByPerformance.length - 1]?.json;\n\n// Count signals\nconst signals = {\n  strong_buy: validItems.filter(item => item.json.signal === 'strong_buy').length,\n  buy: validItems.filter(item => item.json.signal === 'buy').length,\n  hold: validItems.filter(item => item.json.signal === 'hold').length,\n  sell: validItems.filter(item => item.json.signal === 'sell').length,\n  strong_sell: validItems.filter(item => item.json.signal === 'strong_sell').length\n};\n\n// Risk assessment\nconst highRiskAssets = validItems.filter(item => item.json.riskLevel === 'high').length;\nconst portfolioRisk = highRiskAssets > validItems.length / 2 ? 'high' : \n                    highRiskAssets > 0 ? 'medium' : 'low';\n\n// Market sentiment\nconst positiveAssets = validItems.filter(item => item.json.performance === 'positive').length;\nconst marketSentiment = positiveAssets > validItems.length / 2 ? 'bullish' : \n                      positiveAssets === validItems.length / 2 ? 'neutral' : 'bearish';\n\nconst portfolioSummary = {\n  totalAssets: validItems.length,\n  totalValue: totalValue,\n  totalChange24h: totalChange24hPercent,\n  totalChange24hValue: totalChange24hValue,\n  bestPerformer: bestPerformer,\n  worstPerformer: worstPerformer,\n  signals: signals,\n  portfolioRisk: portfolioRisk,\n  marketSentiment: marketSentiment,\n  highRiskAssets: highRiskAssets,\n  errors: errorItems.length,\n  lastUpdated: new Date().toISOString(),\n  assets: validItems.map(item => item.json),\n  // Formatted values\n  totalValueFormatted: `$${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,\n  totalChangeFormatted: `${totalChange24hPercent > 0 ? '+' : ''}${totalChange24hPercent.toFixed(2)}%`,\n  totalChangeValueFormatted: `${totalChange24hValue > 0 ? '+' : ''}$${Math.abs(totalChange24hValue).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`\n};\n\nreturn { json: portfolioSummary };"
+      },
+      "id": "portfolio-aggregator",
+      "name": "Portfolio Aggregator",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "resource": "spreadsheet",
+        "operation": "appendOrUpdate",
+        "documentId": "{{ $env.GOOGLE_SHEETS_CRYPTO_ID }}",
+        "sheetName": "Portfolio History",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp": "={{ $json.lastUpdated }}",
+            "Total Value": "={{ $json.totalValue }}",
+            "24h Change %": "={{ $json.totalChange24h }}",
+            "24h Change Value": "={{ $json.totalChange24hValue }}",
+            "Best Performer": "={{ $json.bestPerformer.symbol }} ({{ $json.bestPerformer.changeFormatted }})",
+            "Worst Performer": "={{ $json.worstPerformer.symbol }} ({{ $json.worstPerformer.changeFormatted }})",
+            "Market Sentiment": "={{ $json.marketSentiment }}",
+            "Portfolio Risk": "={{ $json.portfolioRisk }}",
+            "Strong Buy Signals": "={{ $json.signals.strong_buy }}",
+            "Buy Signals": "={{ $json.signals.buy }}",
+            "Hold Signals": "={{ $json.signals.hold }}",
+            "Sell Signals": "={{ $json.signals.sell }}",
+            "Strong Sell Signals": "={{ $json.signals.strong_sell }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "save-portfolio-history",
+      "name": "Save Portfolio History",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ Math.abs($json.totalChange24h) }}",
+              "rightValue": 5,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "check-significant-change",
+      "name": "Check Significant Change",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1340, 500]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "prompt": "Analyze this crypto portfolio performance and provide insights:\n\nTotal Portfolio Value: {{ $json.totalValueFormatted }}\n24h Change: {{ $json.totalChangeFormatted }} ({{ $json.totalChangeValueFormatted }})\nMarket Sentiment: {{ $json.marketSentiment }}\nPortfolio Risk: {{ $json.portfolioRisk }}\n\nBest Performer: {{ $json.bestPerformer.name }} ({{ $json.bestPerformer.symbol }}) {{ $json.bestPerformer.changeFormatted }}\nWorst Performer: {{ $json.worstPerformer.name }} ({{ $json.worstPerformer.symbol }}) {{ $json.worstPerformer.changeFormatted }}\n\nTrading Signals:\n- Strong Buy: {{ $json.signals.strong_buy }}\n- Buy: {{ $json.signals.buy }}\n- Hold: {{ $json.signals.hold }}\n- Sell: {{ $json.signals.sell }}\n- Strong Sell: {{ $json.signals.strong_sell }}\n\nProvide:\n1. Market analysis summary\n2. Portfolio performance assessment\n3. Risk evaluation\n4. Trading recommendations\n5. Key insights\n\nKeep it concise and actionable.",
+        "options": {
+          "temperature": 0.7,
+          "maxTokens": 500
+        }
+      },
+      "id": "ai-portfolio-analysis",
+      "name": "AI Portfolio Analysis",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [1560, 500]
+    },
+    {
+      "parameters": {
+        "chatId": "{{ $env.TELEGRAM_CRYPTO_CHAT_ID }}",
+        "text": "📊 *Crypto Portfolio Update*\n\n💰 *Total Value:* {{ $json.totalValueFormatted }}\n📈 *24h Change:* {{ $json.totalChangeFormatted }} ({{ $json.totalChangeValueFormatted }})\n\n🏆 *Best:* {{ $json.bestPerformer.symbol }} {{ $json.bestPerformer.changeFormatted }}\n📉 *Worst:* {{ $json.worstPerformer.symbol }} {{ $json.worstPerformer.changeFormatted }}\n\n🎯 *Sentiment:* {{ $json.marketSentiment.toUpperCase() }}\n⚠️ *Risk:* {{ $json.portfolioRisk.toUpperCase() }}\n\n🔔 *Signals:*\n{{ $json.signals.strong_buy > 0 ? `🟢 Strong Buy: ${$json.signals.strong_buy}\\n` : '' }}{{ $json.signals.buy > 0 ? `🟢 Buy: ${$json.signals.buy}\\n` : '' }}{{ $json.signals.hold > 0 ? `🟡 Hold: ${$json.signals.hold}\\n` : '' }}{{ $json.signals.sell > 0 ? `🔴 Sell: ${$json.signals.sell}\\n` : '' }}{{ $json.signals.strong_sell > 0 ? `🔴 Strong Sell: ${$json.signals.strong_sell}\\n` : '' }}\n🤖 *AI Analysis:*\n{{ $('AI Portfolio Analysis').item(0).json.choices[0].message.content }}\n\n⏰ {{ new Date().toLocaleString() }}",
+        "additionalFields": {
+          "parseMode": "Markdown"
+        }
+      },
+      "id": "portfolio-alert",
+      "name": "Portfolio Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1780, 500]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "crypto-alert",
+        "options": {}
+      },
+      "id": "price-alert-webhook",
+      "name": "Price Alert Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 700],
+      "webhookId": "crypto-alert-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process custom price alert\nconst alertData = $json.body;\n\n// Validate alert data\nconst requiredFields = ['symbol', 'alertType', 'targetPrice'];\nconst missingFields = requiredFields.filter(field => !alertData[field]);\n\nif (missingFields.length > 0) {\n  return {\n    json: {\n      error: true,\n      message: `Missing required fields: ${missingFields.join(', ')}`,\n      status: 'validation_failed'\n    }\n  };\n}\n\n// Create price alert\nconst priceAlert = {\n  id: `alert_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,\n  symbol: alertData.symbol.toUpperCase(),\n  alertType: alertData.alertType, // 'above', 'below', 'change_percent'\n  targetPrice: parseFloat(alertData.targetPrice),\n  currentPrice: parseFloat(alertData.currentPrice) || 0,\n  changePercent: parseFloat(alertData.changePercent) || 0,\n  message: alertData.message || '',\n  userId: alertData.userId || 'anonymous',\n  createdAt: new Date().toISOString(),\n  triggered: false,\n  priority: alertData.priority || 'medium'\n};\n\n// Validate alert type and target\nif (!['above', 'below', 'change_percent'].includes(priceAlert.alertType)) {\n  return {\n    json: {\n      error: true,\n      message: 'Invalid alert type. Must be: above, below, or change_percent',\n      status: 'invalid_alert_type'\n    }\n  };\n}\n\n// Check if alert should be triggered immediately\nlet shouldTrigger = false;\nlet triggerReason = '';\n\nif (priceAlert.currentPrice > 0) {\n  switch (priceAlert.alertType) {\n    case 'above':\n      if (priceAlert.currentPrice >= priceAlert.targetPrice) {\n        shouldTrigger = true;\n        triggerReason = `Price ${priceAlert.currentPrice} is above target ${priceAlert.targetPrice}`;\n      }\n      break;\n    case 'below':\n      if (priceAlert.currentPrice <= priceAlert.targetPrice) {\n        shouldTrigger = true;\n        triggerReason = `Price ${priceAlert.currentPrice} is below target ${priceAlert.targetPrice}`;\n      }\n      break;\n    case 'change_percent':\n      if (Math.abs(priceAlert.changePercent) >= Math.abs(priceAlert.targetPrice)) {\n        shouldTrigger = true;\n        triggerReason = `24h change ${priceAlert.changePercent}% exceeds threshold ${priceAlert.targetPrice}%`;\n      }\n      break;\n  }\n}\n\npriceAlert.shouldTrigger = shouldTrigger;\npriceAlert.triggerReason = triggerReason;\n\nif (shouldTrigger) {\n  priceAlert.triggered = true;\n  priceAlert.triggeredAt = new Date().toISOString();\n}\n\nreturn { json: priceAlert };"
+      },
+      "id": "alert-processor",
+      "name": "Alert Processor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 700]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.error }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-alert-validation",
+      "name": "Check Alert Validation",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 700]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "alert-error-response",
+      "name": "Alert Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [680, 900]
+    },
+    {
+      "parameters": {
+        "resource": "spreadsheet",
+        "operation": "appendOrUpdate",
+        "documentId": "{{ $env.GOOGLE_SHEETS_CRYPTO_ID }}",
+        "sheetName": "Price Alerts",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Alert ID": "={{ $json.id }}",
+            "Symbol": "={{ $json.symbol }}",
+            "Alert Type": "={{ $json.alertType }}",
+            "Target Price": "={{ $json.targetPrice }}",
+            "Current Price": "={{ $json.currentPrice }}",
+            "Change Percent": "={{ $json.changePercent }}",
+            "Message": "={{ $json.message }}",
+            "User ID": "={{ $json.userId }}",
+            "Priority": "={{ $json.priority }}",
+            "Created At": "={{ $json.createdAt }}",
+            "Triggered": "={{ $json.triggered }}",
+            "Triggered At": "={{ $json.triggeredAt || 'N/A' }}",
+            "Trigger Reason": "={{ $json.triggerReason }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "save-alert",
+      "name": "Save Price Alert",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [900, 700]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.shouldTrigger }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-trigger-alert",
+      "name": "Check Trigger Alert",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 700]
+    },
+    {
+      "parameters": {
+        "chatId": "{{ $env.TELEGRAM_CRYPTO_CHAT_ID }}",
+        "text": "🚨 *Price Alert Triggered!*\n\n💰 *{{ $json.symbol }}*\n🎯 *Alert Type:* {{ $json.alertType.replace('_', ' ').toUpperCase() }}\n💵 *Target:* ${{ $json.targetPrice }}\n📊 *Current:* ${{ $json.currentPrice }}\n{{ $json.changePercent !== 0 ? `📈 *24h Change:* ${$json.changePercent > 0 ? '+' : ''}${$json.changePercent}%\\n` : '' }}\n⚡ *Reason:* {{ $json.triggerReason }}\n\n{{ $json.message ? `📝 *Note:* ${$json.message}\\n` : '' }}🆔 *Alert ID:* {{ $json.id }}\n⏰ {{ new Date().toLocaleString() }}",
+        "additionalFields": {
+          "parseMode": "Markdown"
+        }
+      },
+      "id": "triggered-alert-notification",
+      "name": "Triggered Alert Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1340, 700]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: true, alertId: $json.id, symbol: $json.symbol, triggered: $json.triggered, message: $json.triggered ? 'Alert created and triggered immediately' : 'Alert created successfully' } }}",
+        "options": {}
+      },
+      "id": "alert-success-response",
+      "name": "Alert Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1560, 700]
+    }
+  ],
+  "connections": {
+    "Price Check Schedule": {
+      "main": [
+        [
+          {
+            "node": "Portfolio Setup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Portfolio Setup": {
+      "main": [
+        [
+          {
+            "node": "Fetch Crypto Prices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Crypto Prices": {
+      "main": [
+        [
+          {
+            "node": "Price Data Processor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Price Data Processor": {
+      "main": [
+        [
+          {
+            "node": "Portfolio Aggregator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Portfolio Aggregator": {
+      "main": [
+        [
+          {
+            "node": "Save Portfolio History",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check Significant Change",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Significant Change": {
+      "main": [
+        [
+          {
+            "node": "AI Portfolio Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Portfolio Analysis": {
+      "main": [
+        [
+          {
+            "node": "Portfolio Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Price Alert Webhook": {
+      "main": [
+        [
+          {
+            "node": "Alert Processor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Alert Processor": {
+      "main": [
+        [
+          {
+            "node": "Check Alert Validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Alert Validation": {
+      "main": [
+        [
+          {
+            "node": "Alert Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Save Price Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Price Alert": {
+      "main": [
+        [
+          {
+            "node": "Check Trigger Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Trigger Alert": {
+      "main": [
+        [
+          {
+            "node": "Triggered Alert Notification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Alert Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Triggered Alert Notification": {
+      "main": [
+        [
+          {
+            "node": "Alert Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 2,
+  "updatedAt": "2024-01-15T10:00:00.000Z",
+  "versionId": "1"
+}

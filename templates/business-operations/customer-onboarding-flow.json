@@ -1,0 +1,651 @@
+{
+  "name": "Customer Onboarding Flow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "new-customer",
+        "options": {
+          "noResponseBody": false
+        }
+      },
+      "id": "1a2b3c4d-5e6f-7g8h-9i0j-k1l2m3n4o5p6",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "customer-onboarding-webhook"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.body.email }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              }
+            },
+            {
+              "leftValue": "={{ $json.body.name }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              }
+            },
+            {
+              "leftValue": "={{ $json.body.email }}",
+              "rightValue": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+              "operator": {
+                "type": "string",
+                "operation": "regex"
+              }
+            }
+          ],
+          "combineOperation": "all"
+        },
+        "options": {}
+      },
+      "id": "2b3c4d5e-6f7g-8h9i-0j1k-l2m3n4o5p6q7",
+      "name": "Validate Customer Data",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process and enrich customer data\nconst customerData = $json.body;\nconst timestamp = new Date().toISOString();\n\n// Generate customer ID\nconst customerId = 'CUST-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5).toUpperCase();\n\n// Extract and clean data\nconst processedCustomer = {\n  customerId: customerId,\n  firstName: customerData.name.split(' ')[0] || '',\n  lastName: customerData.name.split(' ').slice(1).join(' ') || '',\n  fullName: customerData.name,\n  email: customerData.email.toLowerCase(),\n  phone: customerData.phone || '',\n  company: customerData.company || '',\n  plan: customerData.plan || 'basic',\n  source: customerData.source || 'website',\n  signupDate: timestamp,\n  status: 'pending_verification',\n  onboardingStage: 'welcome',\n  tags: customerData.tags || [],\n  metadata: {\n    ipAddress: customerData.ipAddress || '',\n    userAgent: customerData.userAgent || '',\n    referrer: customerData.referrer || '',\n    utmSource: customerData.utm_source || '',\n    utmMedium: customerData.utm_medium || '',\n    utmCampaign: customerData.utm_campaign || ''\n  }\n};\n\nreturn { json: processedCustomer };"
+      },
+      "id": "3c4d5e6f-7g8h-9i0j-1k2l-m3n4o5p6q7r8",
+      "name": "Process Customer Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "your-customers-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Customers"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "customerId": "={{ $json.customerId }}",
+            "firstName": "={{ $json.firstName }}",
+            "lastName": "={{ $json.lastName }}",
+            "email": "={{ $json.email }}",
+            "phone": "={{ $json.phone }}",
+            "company": "={{ $json.company }}",
+            "plan": "={{ $json.plan }}",
+            "source": "={{ $json.source }}",
+            "signupDate": "={{ $json.signupDate }}",
+            "status": "={{ $json.status }}",
+            "onboardingStage": "={{ $json.onboardingStage }}",
+            "utmSource": "={{ $json.metadata.utmSource }}",
+            "utmMedium": "={{ $json.metadata.utmMedium }}",
+            "utmCampaign": "={{ $json.metadata.utmCampaign }}"
+          },
+          "matchingColumns": [
+            "email"
+          ],
+          "schema": [
+            {
+              "id": "customerId",
+              "displayName": "customerId",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "firstName",
+              "displayName": "firstName",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "lastName",
+              "displayName": "lastName",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "company",
+              "displayName": "company",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "plan",
+              "displayName": "plan",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "signupDate",
+              "displayName": "signupDate",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "onboardingStage",
+              "displayName": "onboardingStage",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "utmSource",
+              "displayName": "utmSource",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "utmMedium",
+              "displayName": "utmMedium",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "utmCampaign",
+              "displayName": "utmCampaign",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4d5e6f7g-8h9i-0j1k-2l3m-n4o5p6q7r8s9",
+      "name": "Save to Database",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [900, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "options": {
+          "temperature": 0.7,
+          "maxTokens": 800
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a friendly customer success manager. Create a personalized welcome email that is warm, professional, and helpful. Include relevant next steps based on the customer's plan and information. Keep it concise but engaging."
+            },
+            {
+              "role": "user",
+              "content": "Create a personalized welcome email for:\n\nCustomer: {{ $json.fullName }}\nEmail: {{ $json.email }}\nCompany: {{ $json.company }}\nPlan: {{ $json.plan }}\nSource: {{ $json.source }}\n\nInclude:\n- Warm welcome\n- What to expect next\n- Key resources\n- Contact information for support\n- Next steps specific to their plan"
+            }
+          ]
+        }
+      },
+      "id": "5e6f7g8h-9i0j-1k2l-3m4n-o5p6q7r8s9t0",
+      "name": "Generate Welcome Email",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1,
+      "position": [1120, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-api-credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "message": {
+          "to": "={{ $('Process Customer Data').item.json.email }}",
+          "subject": "Welcome to Our Platform, {{ $('Process Customer Data').item.json.firstName }}! 🎉",
+          "body": "{{ $json.response }}",
+          "bodyType": "html"
+        },
+        "options": {
+          "ccList": "support@yourcompany.com",
+          "bccList": ""
+        }
+      },
+      "id": "6f7g8h9i-0j1k-2l3m-4n5o-p6q7r8s9t0u1",
+      "name": "Send Welcome Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [1340, 300],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-oauth-credential",
+          "name": "Gmail OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "your-team-chat-id",
+        "text": "🎉 *New Customer Onboarded!*\n\n**Name:** {{ $('Process Customer Data').item.json.fullName }}\n**Email:** {{ $('Process Customer Data').item.json.email }}\n**Company:** {{ $('Process Customer Data').item.json.company || 'N/A' }}\n**Plan:** {{ $('Process Customer Data').item.json.plan }}\n**Source:** {{ $('Process Customer Data').item.json.source }}\n**Customer ID:** {{ $('Process Customer Data').item.json.customerId }}\n\n**UTM Data:**\n• Source: {{ $('Process Customer Data').item.json.metadata.utmSource || 'N/A' }}\n• Medium: {{ $('Process Customer Data').item.json.metadata.utmMedium || 'N/A' }}\n• Campaign: {{ $('Process Customer Data').item.json.metadata.utmCampaign || 'N/A' }}\n\n[📊 View Customer Database](https://docs.google.com/spreadsheets/d/your-customers-sheet-id)",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "7g8h9i0j-1k2l-3m4n-5o6p-q7r8s9t0u1v2",
+      "name": "Notify Team",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1560, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot-credential",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 24
+            }
+          ]
+        }
+      },
+      "id": "8h9i0j1k-2l3m-4n5o-6p7q-r8s9t0u1v2w3",
+      "name": "24h Follow-up Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 600]
+    },
+    {
+      "parameters": {
+        "operation": "readOrSearch",
+        "documentId": {
+          "__rl": true,
+          "value": "your-customers-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Customers"
+        },
+        "options": {
+          "where": {
+            "values": [
+              {
+                "column": "onboardingStage",
+                "condition": "equal",
+                "value": "welcome"
+              },
+              {
+                "column": "signupDate",
+                "condition": "dateAfter",
+                "value": "={{ new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString() }}"
+              },
+              {
+                "column": "signupDate",
+                "condition": "dateBefore",
+                "value": "={{ new Date(Date.now() - 23 * 60 * 60 * 1000).toISOString() }}"
+              }
+            ],
+            "combineOperation": "all"
+          }
+        }
+      },
+      "id": "9i0j1k2l-3m4n-5o6p-7q8r-s9t0u1v2w3x4",
+      "name": "Find 24h Old Customers",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [460, 600],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "options": {
+          "temperature": 0.7,
+          "maxTokens": 600
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a helpful customer success manager. Create a follow-up email to check on new customers after 24 hours. Be friendly, offer help, and provide useful resources. Keep it concise and actionable."
+            },
+            {
+              "role": "user",
+              "content": "Create a 24-hour follow-up email for:\n\nCustomer: {{ $json.firstName }}\nPlan: {{ $json.plan }}\n\nInclude:\n- Check how they're doing\n- Offer help with setup\n- Provide relevant resources\n- Schedule a call if needed\n- Keep it friendly and not pushy"
+            }
+          ]
+        }
+      },
+      "id": "0j1k2l3m-4n5o-6p7q-8r9s-t0u1v2w3x4y5",
+      "name": "Generate Follow-up Email",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1,
+      "position": [680, 600],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-api-credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "send",
+        "message": {
+          "to": "={{ $('Find 24h Old Customers').item.json.email }}",
+          "subject": "How are you settling in, {{ $('Find 24h Old Customers').item.json.firstName }}?",
+          "body": "{{ $json.response }}",
+          "bodyType": "html"
+        },
+        "options": {}
+      },
+      "id": "1k2l3m4n-5o6p-7q8r-9s0t-u1v2w3x4y5z6",
+      "name": "Send Follow-up Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [900, 600],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-oauth-credential",
+          "name": "Gmail OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "your-customers-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Customers"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "onboardingStage": "follow_up_sent",
+            "lastContactDate": "={{ new Date().toISOString() }}"
+          },
+          "matchingColumns": [
+            "email"
+          ],
+          "schema": [
+            {
+              "id": "onboardingStage",
+              "displayName": "onboardingStage",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "lastContactDate",
+              "displayName": "lastContactDate",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2l3m4n5o-6p7q-8r9s-0t1u-v2w3x4y5z6a7",
+      "name": "Update Customer Stage",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1120, 600],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": true,\n  \"message\": \"Customer onboarding initiated successfully\",\n  \"customerId\": \"{{ $('Process Customer Data').item.json.customerId }}\",\n  \"email\": \"{{ $('Process Customer Data').item.json.email }}\",\n  \"status\": \"{{ $('Process Customer Data').item.json.status }}\"\n}",
+        "options": {}
+      },
+      "id": "3m4n5o6p-7q8r-9s0t-1u2v-w3x4y5z6a7b8",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1780, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": false,\n  \"message\": \"Invalid customer data provided\",\n  \"errors\": [\n    \"Email is required and must be valid\",\n    \"Name is required\"\n  ]\n}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "4n5o6p7q-8r9s-0t1u-2v3w-x4y5z6a7b8c9",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [680, 100]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Validate Customer Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Customer Data": {
+      "main": [
+        [
+          {
+            "node": "Process Customer Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Customer Data": {
+      "main": [
+        [
+          {
+            "node": "Save to Database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Database": {
+      "main": [
+        [
+          {
+            "node": "Generate Welcome Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Welcome Email": {
+      "main": [
+        [
+          {
+            "node": "Send Welcome Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Welcome Email": {
+      "main": [
+        [
+          {
+            "node": "Notify Team",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Team": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "24h Follow-up Trigger": {
+      "main": [
+        [
+          {
+            "node": "Find 24h Old Customers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find 24h Old Customers": {
+      "main": [
+        [
+          {
+            "node": "Generate Follow-up Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Follow-up Email": {
+      "main": [
+        [
+          {
+            "node": "Send Follow-up Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Follow-up Email": {
+      "main": [
+        [
+          {
+            "node": "Update Customer Stage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-12-19T10:00:00.000Z",
+      "updatedAt": "2024-12-19T10:00:00.000Z",
+      "id": "business-operations",
+      "name": "Business Operations"
+    }
+  ],
+  "triggerCount": 2,
+  "updatedAt": "2024-12-19T10:00:00.000Z",
+  "versionId": "1"
+}

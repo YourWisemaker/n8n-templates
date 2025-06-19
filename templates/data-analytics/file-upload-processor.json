@@ -1,0 +1,705 @@
+{
+  "name": "File Upload Processor",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "file-upload",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "1a2b3c4d-5e6f-7g8h-9i0j-k1l2m3n4o5p6",
+      "name": "File Upload Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "file-upload-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse file upload data\nconst body = $json.body;\nconst headers = $json.headers;\n\n// Extract file information\nconst fileData = {\n  fileName: body.fileName || headers['x-filename'] || 'unknown_file',\n  fileSize: body.fileSize || headers['content-length'] || 0,\n  fileType: body.fileType || headers['content-type'] || 'application/octet-stream',\n  uploadedBy: body.uploadedBy || headers['x-user-id'] || 'anonymous',\n  uploadedAt: new Date().toISOString(),\n  fileContent: body.fileContent || body.data || '',\n  metadata: body.metadata || {},\n  tags: body.tags || [],\n  category: body.category || 'general',\n  description: body.description || '',\n  isPublic: body.isPublic || false,\n  processingOptions: body.processingOptions || {}\n};\n\n// Determine file extension\nconst fileExtension = fileData.fileName.split('.').pop()?.toLowerCase() || '';\n\n// Determine processing type based on file type\nlet processingType = 'unknown';\nif (['csv', 'xlsx', 'xls'].includes(fileExtension)) {\n  processingType = 'spreadsheet';\n} else if (['json', 'xml'].includes(fileExtension)) {\n  processingType = 'data';\n} else if (['txt', 'log'].includes(fileExtension)) {\n  processingType = 'text';\n} else if (['pdf', 'doc', 'docx'].includes(fileExtension)) {\n  processingType = 'document';\n} else if (['jpg', 'jpeg', 'png', 'gif', 'bmp'].includes(fileExtension)) {\n  processingType = 'image';\n} else if (['mp4', 'avi', 'mov', 'wmv'].includes(fileExtension)) {\n  processingType = 'video';\n} else if (['mp3', 'wav', 'flac', 'aac'].includes(fileExtension)) {\n  processingType = 'audio';\n}\n\n// Validate file size (max 50MB)\nconst maxSize = 50 * 1024 * 1024; // 50MB\nconst isValidSize = parseInt(fileData.fileSize) <= maxSize;\n\n// Generate unique file ID\nconst fileId = `file_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;\n\nreturn {\n  json: {\n    ...fileData,\n    fileId,\n    fileExtension,\n    processingType,\n    isValidSize,\n    maxSizeExceeded: !isValidSize,\n    fileSizeMB: Math.round(parseInt(fileData.fileSize) / (1024 * 1024) * 100) / 100\n  }\n};"
+      },
+      "id": "2b3c4d5e-6f7g-8h9i-0j1k-l2m3n4o5p6q7",
+      "name": "Parse File Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.isValidSize }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combineOperation": "all"
+        },
+        "options": {}
+      },
+      "id": "3c4d5e6f-7g8h-9i0j-1k2l-m3n4o5p6q7r8",
+      "name": "Is Valid File Size?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "upload",
+        "name": "={{ $json.fileId }}_{{ $json.fileName }}",
+        "parents": {
+          "__rl": true,
+          "value": "your-upload-folder-id",
+          "mode": "list"
+        },
+        "options": {
+          "description": "={{ $json.description || 'Uploaded via n8n automation' }}"
+        }
+      },
+      "id": "4d5e6f7g-8h9i-0j1k-2l3m-n4o5p6q7r8s9",
+      "name": "Upload to Google Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [900, 300],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "google-drive-credential",
+          "name": "Google Drive OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.processingType }}",
+              "rightValue": "spreadsheet",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combineOperation": "all"
+        },
+        "options": {}
+      },
+      "id": "5e6f7g8h-9i0j-1k2l-3m4n-o5p6q7r8s9t0",
+      "name": "Is Spreadsheet?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process CSV/Excel data\nconst fileData = $json;\nlet csvData = fileData.fileContent;\n\n// If it's base64 encoded, decode it\nif (fileData.fileContent.startsWith('data:')) {\n  const base64Data = fileData.fileContent.split(',')[1];\n  csvData = Buffer.from(base64Data, 'base64').toString('utf-8');\n}\n\n// Parse CSV data\nconst lines = csvData.split('\\n').filter(line => line.trim());\nif (lines.length === 0) {\n  return [{\n    json: {\n      ...fileData,\n      error: 'Empty file or invalid format',\n      processedData: []\n    }\n  }];\n}\n\n// Extract headers\nconst headers = lines[0].split(',').map(h => h.trim().replace(/\"/g, ''));\n\n// Process data rows\nconst processedData = [];\nfor (let i = 1; i < Math.min(lines.length, 1001); i++) { // Limit to 1000 rows\n  const values = lines[i].split(',').map(v => v.trim().replace(/\"/g, ''));\n  if (values.length === headers.length) {\n    const row = {};\n    headers.forEach((header, index) => {\n      row[header] = values[index];\n    });\n    processedData.push(row);\n  }\n}\n\n// Generate statistics\nconst stats = {\n  totalRows: lines.length - 1,\n  processedRows: processedData.length,\n  columns: headers.length,\n  columnNames: headers,\n  sampleData: processedData.slice(0, 5) // First 5 rows as sample\n};\n\nreturn [{\n  json: {\n    ...fileData,\n    processedData,\n    stats,\n    processingStatus: 'completed'\n  }\n}];"
+      },
+      "id": "6f7g8h9i-0j1k-2l3m-4n5o-p6q7r8s9t0u1",
+      "name": "Process Spreadsheet",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.processingType }}",
+              "rightValue": "image",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combineOperation": "all"
+        },
+        "options": {}
+      },
+      "id": "7g8h9i0j-1k2l-3m4n-5o6p-q7r8s9t0u1v2",
+      "name": "Is Image?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1340, 400]
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "operation": "create",
+        "model": {
+          "__rl": true,
+          "value": "gpt-4-vision-preview",
+          "mode": "list"
+        },
+        "messages": {
+          "values": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Analyze this image and provide a detailed description including: 1) Main objects/subjects, 2) Colors and composition, 3) Text content if any, 4) Potential use case or category, 5) Quality assessment. Be concise but thorough."
+                },
+                {
+                  "type": "image_url",
+                  "image_url": {
+                    "url": "{{ $json.fileContent }}"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.3,
+          "maxTokens": 500
+        }
+      },
+      "id": "8h9i0j1k-2l3m-4n5o-6p7q-r8s9t0u1v2w3",
+      "name": "Analyze Image",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [1560, 400],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai-credential",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process image analysis results\nconst fileData = $json;\nconst analysisData = $('Analyze Image').item.json;\n\nconst imageAnalysis = {\n  description: analysisData.choices[0].message.content,\n  analysisTimestamp: new Date().toISOString(),\n  confidence: 'high' // GPT-4 Vision typically provides high confidence\n};\n\n// Extract key information from analysis\nconst analysis = imageAnalysis.description.toLowerCase();\nconst detectedObjects = [];\nconst detectedColors = [];\nconst hasText = analysis.includes('text') || analysis.includes('writing') || analysis.includes('words');\n\n// Simple object detection based on common terms\nconst commonObjects = ['person', 'people', 'car', 'building', 'tree', 'animal', 'food', 'document', 'chart', 'graph'];\ncommonObjects.forEach(obj => {\n  if (analysis.includes(obj)) {\n    detectedObjects.push(obj);\n  }\n});\n\n// Simple color detection\nconst commonColors = ['red', 'blue', 'green', 'yellow', 'black', 'white', 'orange', 'purple', 'pink', 'brown'];\ncommonColors.forEach(color => {\n  if (analysis.includes(color)) {\n    detectedColors.push(color);\n  }\n});\n\nreturn {\n  json: {\n    ...fileData,\n    imageAnalysis,\n    detectedObjects,\n    detectedColors,\n    hasText,\n    processingStatus: 'completed'\n  }\n};"
+      },
+      "id": "9i0j1k2l-3m4n-5o6p-7q8r-s9t0u1v2w3x4",
+      "name": "Process Image Analysis",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1780, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process other file types (text, document, etc.)\nconst fileData = $json;\nlet content = fileData.fileContent;\n\n// If it's base64 encoded, decode it\nif (content.startsWith('data:')) {\n  const base64Data = content.split(',')[1];\n  content = Buffer.from(base64Data, 'base64').toString('utf-8');\n}\n\n// Basic text analysis\nconst wordCount = content.split(/\\s+/).filter(word => word.length > 0).length;\nconst characterCount = content.length;\nconst lineCount = content.split('\\n').length;\n\n// Extract first few lines as preview\nconst lines = content.split('\\n');\nconst preview = lines.slice(0, 10).join('\\n');\n\n// Simple keyword extraction (most common words)\nconst words = content.toLowerCase().match(/\\b\\w+\\b/g) || [];\nconst wordFreq = {};\nwords.forEach(word => {\n  if (word.length > 3) { // Only count words longer than 3 characters\n    wordFreq[word] = (wordFreq[word] || 0) + 1;\n  }\n});\n\n// Get top 10 most frequent words\nconst topWords = Object.entries(wordFreq)\n  .sort(([,a], [,b]) => b - a)\n  .slice(0, 10)\n  .map(([word, count]) => ({ word, count }));\n\n// Detect potential data patterns\nconst hasEmails = /\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b/.test(content);\nconst hasPhones = /\\b\\d{3}[-.]?\\d{3}[-.]?\\d{4}\\b/.test(content);\nconst hasUrls = /https?:\/\/(www\\.)?[-a-zA-Z0-9@:%._\\+~#=]{1,256}\\.[a-zA-Z0-9()]{1,6}\\b([-a-zA-Z0-9()@:%_\\+.~#?&//=]*)/.test(content);\nconst hasNumbers = /\\b\\d+\\b/.test(content);\n\nconst textAnalysis = {\n  wordCount,\n  characterCount,\n  lineCount,\n  preview,\n  topWords,\n  patterns: {\n    hasEmails,\n    hasPhones,\n    hasUrls,\n    hasNumbers\n  },\n  analysisTimestamp: new Date().toISOString()\n};\n\nreturn {\n  json: {\n    ...fileData,\n    textAnalysis,\n    processingStatus: 'completed'\n  }\n};"
+      },
+      "id": "0j1k2l3m-4n5o-6p7q-8r9s-t0u1v2w3x4y5",
+      "name": "Process Other Files",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 600]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "your-file-registry-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "File Registry"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "fileId": "={{ $json.fileId }}",
+            "fileName": "={{ $json.fileName }}",
+            "fileType": "={{ $json.fileType }}",
+            "fileSize": "={{ $json.fileSize }}",
+            "fileSizeMB": "={{ $json.fileSizeMB }}",
+            "processingType": "={{ $json.processingType }}",
+            "uploadedBy": "={{ $json.uploadedBy }}",
+            "uploadedAt": "={{ $json.uploadedAt }}",
+            "category": "={{ $json.category }}",
+            "description": "={{ $json.description }}",
+            "tags": "={{ $json.tags.join(', ') }}",
+            "isPublic": "={{ $json.isPublic }}",
+            "processingStatus": "={{ $json.processingStatus || 'pending' }}",
+            "driveFileId": "={{ $('Upload to Google Drive').item.json.id || '' }}",
+            "driveUrl": "={{ $('Upload to Google Drive').item.json.webViewLink || '' }}",
+            "processedAt": "={{ new Date().toISOString() }}"
+          },
+          "matchingColumns": [
+            "fileId"
+          ],
+          "schema": [
+            {
+              "id": "fileId",
+              "displayName": "fileId",
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fileName",
+              "displayName": "fileName",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fileType",
+              "displayName": "fileType",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fileSize",
+              "displayName": "fileSize",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fileSizeMB",
+              "displayName": "fileSizeMB",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "processingType",
+              "displayName": "processingType",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "uploadedBy",
+              "displayName": "uploadedBy",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "uploadedAt",
+              "displayName": "uploadedAt",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "category",
+              "displayName": "category",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "description",
+              "displayName": "description",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tags",
+              "displayName": "tags",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "isPublic",
+              "displayName": "isPublic",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "processingStatus",
+              "displayName": "processingStatus",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "driveFileId",
+              "displayName": "driveFileId",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "driveUrl",
+              "displayName": "driveUrl",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "processedAt",
+              "displayName": "processedAt",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1k2l3m4n-5o6p-7q8r-9s0t-u1v2w3x4y5z6",
+      "name": "Save to File Registry",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [2000, 400],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "your-file-processing-chat-id",
+        "text": "📁 **File Processed Successfully**\n\n🆔 **File ID:** {{ $json.fileId }}\n📄 **Name:** {{ $json.fileName }}\n📊 **Type:** {{ $json.processingType }}\n💾 **Size:** {{ $json.fileSizeMB }}MB\n👤 **Uploaded by:** {{ $json.uploadedBy }}\n🏷️ **Category:** {{ $json.category }}\n\n{{ $json.description ? '📝 **Description:** ' + $json.description + '\\n\\n' : '' }}{{ $json.stats ? '📈 **Spreadsheet Stats:**\\n• Rows: ' + $json.stats.processedRows + '\\n• Columns: ' + $json.stats.columns + '\\n• Sample: ' + JSON.stringify($json.stats.sampleData[0] || {}) + '\\n\\n' : '' }}{{ $json.imageAnalysis ? '🖼️ **Image Analysis:**\\n' + $json.imageAnalysis.description.substring(0, 200) + '...\\n\\n' : '' }}{{ $json.textAnalysis ? '📝 **Text Analysis:**\\n• Words: ' + $json.textAnalysis.wordCount + '\\n• Lines: ' + $json.textAnalysis.lineCount + '\\n• Top words: ' + $json.textAnalysis.topWords.slice(0, 3).map(w => w.word).join(', ') + '\\n\\n' : '' }}🔗 **Drive Link:** [View File]({{ $('Upload to Google Drive').item.json.webViewLink || 'N/A' }})",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "2l3m4n5o-6p7q-8r9s-0t1u-v2w3x4y5z6a7",
+      "name": "Send Processing Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [2220, 400],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot-credential",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "your-file-processing-chat-id",
+        "text": "❌ **File Upload Failed**\n\n📄 **File:** {{ $json.fileName }}\n💾 **Size:** {{ $json.fileSizeMB }}MB\n🚫 **Reason:** File size exceeds 50MB limit\n👤 **Uploaded by:** {{ $json.uploadedBy }}\n⏰ **Time:** {{ $json.uploadedAt }}\n\nPlease upload a smaller file or contact support for assistance.",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "3m4n5o6p-7q8r-9s0t-1u2v-w3x4y5z6a7b8",
+      "name": "Send Size Error Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [900, 500],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot-credential",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * 1"
+            }
+          ]
+        }
+      },
+      "id": "4n5o6p7q-8r9s-0t1u-2v3w-x4y5z6a7b8c9",
+      "name": "Weekly Report Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 800]
+    },
+    {
+      "parameters": {
+        "operation": "readOrSearch",
+        "documentId": {
+          "__rl": true,
+          "value": "your-file-registry-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "File Registry"
+        },
+        "options": {
+          "where": {
+            "values": [
+              {
+                "column": "uploadedAt",
+                "condition": "dateAfter",
+                "value": "={{ new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString() }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "5o6p7q8r-9s0t-1u2v-3w4x-y5z6a7b8c9d0",
+      "name": "Get Weekly Files",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [460, 800],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate weekly file processing report\nconst files = $input.all();\n\nif (!files || files.length === 0) {\n  return [{\n    json: {\n      report: 'No files were processed in the last 7 days.',\n      stats: {\n        totalFiles: 0,\n        totalSize: 0,\n        byType: {},\n        byUser: {},\n        byCategory: {}\n      }\n    }\n  }];\n}\n\n// Calculate statistics\nlet totalSize = 0;\nconst byType = {};\nconst byUser = {};\nconst byCategory = {};\nconst byDay = {};\n\nfiles.forEach(item => {\n  const file = item.json;\n  \n  // Size calculation\n  totalSize += parseFloat(file.fileSizeMB || 0);\n  \n  // By type\n  byType[file.processingType] = (byType[file.processingType] || 0) + 1;\n  \n  // By user\n  byUser[file.uploadedBy] = (byUser[file.uploadedBy] || 0) + 1;\n  \n  // By category\n  byCategory[file.category] = (byCategory[file.category] || 0) + 1;\n  \n  // By day\n  const day = new Date(file.uploadedAt).toDateString();\n  byDay[day] = (byDay[day] || 0) + 1;\n});\n\n// Generate report\nlet report = `📊 **Weekly File Processing Report**\\n`;\nreport += `📅 **Period:** Last 7 days\\n`;\nreport += `⏰ **Generated:** ${new Date().toISOString()}\\n\\n`;\n\nreport += `📈 **Overall Statistics:**\\n`;\nreport += `• Total Files: ${files.length}\\n`;\nreport += `• Total Size: ${Math.round(totalSize * 100) / 100} MB\\n`;\nreport += `• Average Size: ${Math.round((totalSize / files.length) * 100) / 100} MB\\n\\n`;\n\nif (Object.keys(byType).length > 0) {\n  report += `📁 **Files by Type:**\\n`;\n  Object.entries(byType).forEach(([type, count]) => {\n    const percentage = Math.round((count / files.length) * 100);\n    report += `  • ${type}: ${count} files (${percentage}%)\\n`;\n  });\n  report += `\\n`;\n}\n\nif (Object.keys(byCategory).length > 0) {\n  report += `🏷️ **Files by Category:**\\n`;\n  Object.entries(byCategory).forEach(([category, count]) => {\n    const percentage = Math.round((count / files.length) * 100);\n    report += `  • ${category}: ${count} files (${percentage}%)\\n`;\n  });\n  report += `\\n`;\n}\n\nif (Object.keys(byUser).length > 0) {\n  report += `👥 **Most Active Users:**\\n`;\n  const sortedUsers = Object.entries(byUser).sort(([,a], [,b]) => b - a).slice(0, 5);\n  sortedUsers.forEach(([user, count]) => {\n    report += `  • ${user}: ${count} files\\n`;\n  });\n  report += `\\n`;\n}\n\nif (Object.keys(byDay).length > 0) {\n  report += `📅 **Daily Activity:**\\n`;\n  Object.entries(byDay).forEach(([day, count]) => {\n    report += `  • ${day}: ${count} files\\n`;\n  });\n  report += `\\n`;\n}\n\nreport += `[📋 View File Registry](https://docs.google.com/spreadsheets/d/your-file-registry-sheet-id)`;\n\nconst stats = {\n  totalFiles: files.length,\n  totalSize: Math.round(totalSize * 100) / 100,\n  averageSize: Math.round((totalSize / files.length) * 100) / 100,\n  byType,\n  byUser,\n  byCategory,\n  byDay\n};\n\nreturn [{\n  json: {\n    report,\n    stats,\n    generatedAt: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "6p7q8r9s-0t1u-2v3w-4x5y-z6a7b8c9d0e1",
+      "name": "Generate Weekly Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 800]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "your-file-processing-chat-id",
+        "text": "{{ $json.report }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "7q8r9s0t-1u2v-3w4x-5y6z-a7b8c9d0e1f2",
+      "name": "Send Weekly Report",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [900, 800],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot-credential",
+          "name": "Telegram Bot API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "File Upload Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse File Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse File Data": {
+      "main": [
+        [
+          {
+            "node": "Is Valid File Size?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Valid File Size?": {
+      "main": [
+        [
+          {
+            "node": "Upload to Google Drive",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Size Error Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to Google Drive": {
+      "main": [
+        [
+          {
+            "node": "Is Spreadsheet?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Spreadsheet?": {
+      "main": [
+        [
+          {
+            "node": "Process Spreadsheet",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Image?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Spreadsheet": {
+      "main": [
+        [
+          {
+            "node": "Save to File Registry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Image?": {
+      "main": [
+        [
+          {
+            "node": "Analyze Image",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Process Other Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Image": {
+      "main": [
+        [
+          {
+            "node": "Process Image Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Image Analysis": {
+      "main": [
+        [
+          {
+            "node": "Save to File Registry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Other Files": {
+      "main": [
+        [
+          {
+            "node": "Save to File Registry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to File Registry": {
+      "main": [
+        [
+          {
+            "node": "Send Processing Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Weekly Report Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Weekly Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Weekly Files": {
+      "main": [
+        [
+          {
+            "node": "Generate Weekly Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Weekly Report": {
+      "main": [
+        [
+          {
+            "node": "Send Weekly Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-12-19T10:00:00.000Z",
+      "updatedAt": "2024-12-19T10:00:00.000Z",
+      "id": "data-analytics",
+      "name": "Data & Analytics"
+    }
+  ],
+  "triggerCount": 2,
+  "updatedAt": "2024-12-19T10:00:00.000Z",
+  "versionId": "1"
+}

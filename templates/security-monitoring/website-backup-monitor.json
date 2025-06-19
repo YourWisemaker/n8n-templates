@@ -1,0 +1,505 @@
+{
+  "name": "Website Backup Monitor",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 2 * * *"
+            }
+          ]
+        }
+      },
+      "id": "1a2b3c4d-5e6f-7g8h-9i0j-k1l2m3n4o5p6",
+      "name": "Daily Backup Check",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Define websites and backup sources to monitor\nconst websites = [\n  {\n    name: 'Main Website',\n    url: 'https://yourwebsite.com',\n    backupUrl: 'https://yourwebsite.com/backup-status',\n    expectedFiles: ['database.sql', 'files.tar.gz'],\n    maxAge: 24 // hours\n  },\n  {\n    name: 'Blog',\n    url: 'https://blog.yourwebsite.com',\n    backupUrl: 'https://blog.yourwebsite.com/wp-admin/backup-status.php',\n    expectedFiles: ['wp-database.sql', 'wp-content.zip'],\n    maxAge: 24\n  },\n  {\n    name: 'E-commerce Store',\n    url: 'https://store.yourwebsite.com',\n    backupUrl: 'https://store.yourwebsite.com/admin/backup-check',\n    expectedFiles: ['store-db.sql', 'product-images.zip'],\n    maxAge: 12\n  }\n];\n\nreturn websites.map(site => ({ json: site }));"
+      },
+      "id": "2b3c4d5e-6f7g-8h9i-0j1k-l2m3n4o5p6q7",
+      "name": "Define Websites",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "options": {
+          "timeout": 30000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": true,
+              "maxRedirects": 5
+            }
+          }
+        }
+      },
+      "id": "3c4d5e6f-7g8h-9i0j-1k2l-m3n4o5p6q7r8",
+      "name": "Check Website Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Define Websites').item.json.backupUrl }}",
+        "options": {
+          "timeout": 30000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": true,
+              "maxRedirects": 5
+            }
+          }
+        }
+      },
+      "id": "4d5e6f7g-8h9i-0j1k-2l3m-n4o5p6q7r8s9",
+      "name": "Check Backup Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Analyze website and backup status\nconst websiteData = $('Define Websites').item.json;\nconst websiteResponse = $('Check Website Status').item;\nconst backupResponse = $('Check Backup Status').item;\n\nconst currentTime = new Date();\nconst checkId = `${websiteData.name.replace(/\\s+/g, '_')}_${currentTime.getTime()}`;\n\n// Check website status\nconst websiteStatus = {\n  isUp: websiteResponse.json && websiteResponse.statusCode >= 200 && websiteResponse.statusCode < 400,\n  statusCode: websiteResponse.statusCode || 0,\n  responseTime: websiteResponse.responseTime || 0,\n  error: websiteResponse.error || null\n};\n\n// Check backup status\nlet backupStatus = {\n  isHealthy: false,\n  lastBackup: null,\n  missingFiles: [],\n  error: null,\n  age: null\n};\n\nif (backupResponse.json && backupResponse.statusCode >= 200 && backupResponse.statusCode < 400) {\n  try {\n    const backupData = typeof backupResponse.json === 'string' ? \n      JSON.parse(backupResponse.json) : backupResponse.json;\n    \n    // Parse backup information\n    const lastBackupTime = new Date(backupData.lastBackup || backupData.last_backup || backupData.timestamp);\n    const ageInHours = (currentTime - lastBackupTime) / (1000 * 60 * 60);\n    \n    backupStatus = {\n      isHealthy: ageInHours <= websiteData.maxAge,\n      lastBackup: lastBackupTime.toISOString(),\n      age: ageInHours,\n      files: backupData.files || [],\n      missingFiles: websiteData.expectedFiles.filter(file => \n        !(backupData.files || []).includes(file)\n      ),\n      error: null\n    };\n  } catch (error) {\n    backupStatus.error = `Failed to parse backup data: ${error.message}`;\n  }\n} else {\n  backupStatus.error = `Backup endpoint error: ${backupResponse.statusCode} - ${backupResponse.error}`;\n}\n\n// Determine overall health\nconst overallHealth = websiteStatus.isUp && backupStatus.isHealthy && backupStatus.missingFiles.length === 0;\n\n// Generate alerts\nconst alerts = [];\nif (!websiteStatus.isUp) {\n  alerts.push(`🔴 Website is DOWN (Status: ${websiteStatus.statusCode})`);\n}\nif (!backupStatus.isHealthy) {\n  if (backupStatus.age !== null) {\n    alerts.push(`⚠️ Backup is ${backupStatus.age.toFixed(1)} hours old (Max: ${websiteData.maxAge}h)`);\n  } else {\n    alerts.push(`❌ Backup status unknown`);\n  }\n}\nif (backupStatus.missingFiles.length > 0) {\n  alerts.push(`📁 Missing backup files: ${backupStatus.missingFiles.join(', ')}`);\n}\nif (backupStatus.error) {\n  alerts.push(`🚨 Backup check error: ${backupStatus.error}`);\n}\n\nconst result = {\n  checkId: checkId,\n  timestamp: currentTime.toISOString(),\n  website: {\n    name: websiteData.name,\n    url: websiteData.url,\n    ...websiteStatus\n  },\n  backup: backupStatus,\n  overallHealth: overallHealth,\n  alerts: alerts,\n  needsAttention: alerts.length > 0\n};\n\nreturn { json: result };"
+      },
+      "id": "5e6f7g8h-9i0j-1k2l-3m4n-o5p6q7r8s9t0",
+      "name": "Analyze Status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "your-backup-monitoring-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Backup Logs"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $json.timestamp }}",
+            "website": "={{ $json.website.name }}",
+            "websiteStatus": "={{ $json.website.isUp ? 'UP' : 'DOWN' }}",
+            "websiteResponseTime": "={{ $json.website.responseTime }}",
+            "backupHealthy": "={{ $json.backup.isHealthy ? 'HEALTHY' : 'UNHEALTHY' }}",
+            "backupAge": "={{ $json.backup.age ? $json.backup.age.toFixed(2) + 'h' : 'Unknown' }}",
+            "lastBackup": "={{ $json.backup.lastBackup || 'Unknown' }}",
+            "missingFiles": "={{ $json.backup.missingFiles.join(', ') }}",
+            "overallHealth": "={{ $json.overallHealth ? 'HEALTHY' : 'NEEDS ATTENTION' }}",
+            "alerts": "={{ $json.alerts.join(' | ') }}",
+            "checkId": "={{ $json.checkId }}"
+          },
+          "matchingColumns": [
+            "checkId"
+          ],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "website",
+              "displayName": "website",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "websiteStatus",
+              "displayName": "websiteStatus",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "websiteResponseTime",
+              "displayName": "websiteResponseTime",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "backupHealthy",
+              "displayName": "backupHealthy",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "backupAge",
+              "displayName": "backupAge",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "lastBackup",
+              "displayName": "lastBackup",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "missingFiles",
+              "displayName": "missingFiles",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "overallHealth",
+              "displayName": "overallHealth",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "alerts",
+              "displayName": "alerts",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "checkId",
+              "displayName": "checkId",
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6f7g8h9i-0j1k-2l3m-4n5o-p6q7r8s9t0u1",
+      "name": "Log to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1340, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.needsAttention }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combineOperation": "all"
+        },
+        "options": {}
+      },
+      "id": "7g8h9i0j-1k2l-3m4n-5o6p-q7r8s9t0u1v2",
+      "name": "Needs Alert?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "your-admin-chat-id",
+        "text": "🚨 **Website Backup Alert**\n\n**Website:** {{ $json.website.name }}\n**URL:** {{ $json.website.url }}\n**Time:** {{ new Date($json.timestamp).toLocaleString() }}\n\n**Issues Found:**\n{{ $json.alerts.map(alert => '• ' + alert).join('\\n') }}\n\n**Status Details:**\n• Website: {{ $json.website.isUp ? '✅ UP' : '❌ DOWN' }} ({{ $json.website.responseTime }}ms)\n• Backup: {{ $json.backup.isHealthy ? '✅ HEALTHY' : '⚠️ UNHEALTHY' }}\n• Last Backup: {{ $json.backup.lastBackup ? new Date($json.backup.lastBackup).toLocaleString() : 'Unknown' }}\n• Backup Age: {{ $json.backup.age ? $json.backup.age.toFixed(1) + ' hours' : 'Unknown' }}\n\n[📊 View Monitoring Dashboard](https://docs.google.com/spreadsheets/d/your-backup-monitoring-sheet-id)",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "8h9i0j1k-2l3m-4n5o-6p7q-r8s9t0u1v2w3",
+      "name": "Send Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1780, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot-credential",
+          "name": "Telegram Bot API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "channel": "#alerts",
+        "text": "🚨 Website Backup Alert: {{ $json.website.name }}\n\nIssues: {{ $json.alerts.join(', ') }}\n\nCheck the monitoring dashboard for details.",
+        "otherOptions": {}
+      },
+      "id": "9i0j1k2l-3m4n-5o6p-7q8r-s9t0u1v2w3x4",
+      "name": "Send Slack Alert",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [2000, 300],
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "slack-oauth-credential",
+          "name": "Slack OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * 1"
+            }
+          ]
+        }
+      },
+      "id": "0j1k2l3m-4n5o-6p7q-8r9s-t0u1v2w3x4y5",
+      "name": "Weekly Report Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 600]
+    },
+    {
+      "parameters": {
+        "operation": "readOrSearch",
+        "documentId": {
+          "__rl": true,
+          "value": "your-backup-monitoring-sheet-id",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Backup Logs"
+        },
+        "options": {
+          "where": {
+            "values": [
+              {
+                "column": "timestamp",
+                "condition": "dateAfter",
+                "value": "={{ new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString() }}"
+              }
+            ],
+            "combineOperation": "all"
+          }
+        }
+      },
+      "id": "1k2l3m4n-5o6p-7q8r-9s0t-u1v2w3x4y5z6",
+      "name": "Get Week Data",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [460, 600],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets-credential",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate weekly backup monitoring report\nconst logs = $input.all();\n\nif (logs.length === 0) {\n  return { json: { noData: true, message: 'No monitoring data for the past week' } };\n}\n\n// Group by website\nconst websiteStats = {};\nlet totalChecks = 0;\nlet totalIssues = 0;\n\nlogs.forEach(log => {\n  const data = log.json;\n  const website = data.website;\n  \n  if (!websiteStats[website]) {\n    websiteStats[website] = {\n      totalChecks: 0,\n      healthyChecks: 0,\n      downtime: 0,\n      backupIssues: 0,\n      avgResponseTime: 0,\n      responseTimeSum: 0,\n      lastCheck: null\n    };\n  }\n  \n  const stats = websiteStats[website];\n  stats.totalChecks++;\n  totalChecks++;\n  \n  if (data.overallHealth === 'HEALTHY') {\n    stats.healthyChecks++;\n  } else {\n    totalIssues++;\n  }\n  \n  if (data.websiteStatus === 'DOWN') {\n    stats.downtime++;\n  }\n  \n  if (data.backupHealthy === 'UNHEALTHY') {\n    stats.backupIssues++;\n  }\n  \n  const responseTime = parseFloat(data.websiteResponseTime) || 0;\n  stats.responseTimeSum += responseTime;\n  stats.avgResponseTime = stats.responseTimeSum / stats.totalChecks;\n  \n  const checkTime = new Date(data.timestamp);\n  if (!stats.lastCheck || checkTime > new Date(stats.lastCheck)) {\n    stats.lastCheck = data.timestamp;\n  }\n});\n\n// Calculate uptime percentages\nObject.keys(websiteStats).forEach(website => {\n  const stats = websiteStats[website];\n  stats.uptimePercentage = ((stats.totalChecks - stats.downtime) / stats.totalChecks * 100).toFixed(2);\n  stats.backupHealthPercentage = ((stats.totalChecks - stats.backupIssues) / stats.totalChecks * 100).toFixed(2);\n});\n\n// Generate report\nconst weekStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toLocaleDateString();\nconst weekEnd = new Date().toLocaleDateString();\n\nconst report = `📊 **Weekly Backup Monitoring Report** (${weekStart} - ${weekEnd})\n\n` +\n  `**Overview:**\n` +\n  `• Total Checks: ${totalChecks}\n` +\n  `• Issues Found: ${totalIssues}\n` +\n  `• Success Rate: ${((totalChecks - totalIssues) / totalChecks * 100).toFixed(1)}%\n\n` +\n  `**Website Details:**\n` +\n  Object.entries(websiteStats).map(([website, stats]) => \n    `**${website}:**\n` +\n    `• Uptime: ${stats.uptimePercentage}% (${stats.totalChecks - stats.downtime}/${stats.totalChecks})\n` +\n    `• Backup Health: ${stats.backupHealthPercentage}% (${stats.totalChecks - stats.backupIssues}/${stats.totalChecks})\n` +\n    `• Avg Response Time: ${stats.avgResponseTime.toFixed(0)}ms\n` +\n    `• Last Check: ${new Date(stats.lastCheck).toLocaleString()}\n`\n  ).join('\\n') +\n  `\n[📈 View Full Dashboard](https://docs.google.com/spreadsheets/d/your-backup-monitoring-sheet-id)`;\n\nreturn {\n  json: {\n    report: report,\n    totalChecks: totalChecks,\n    totalIssues: totalIssues,\n    successRate: ((totalChecks - totalIssues) / totalChecks * 100).toFixed(1),\n    websiteStats: websiteStats,\n    weekStart: weekStart,\n    weekEnd: weekEnd\n  }\n};"
+      },
+      "id": "2l3m4n5o-6p7q-8r9s-0t1u-v2w3x4y5z6a7",
+      "name": "Generate Weekly Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 600]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "your-admin-chat-id",
+        "text": "={{ $json.report }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "3m4n5o6p-7q8r-9s0t-1u2v-w3x4y5z6a7b8",
+      "name": "Send Weekly Report",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [900, 600],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-bot-credential",
+          "name": "Telegram Bot API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily Backup Check": {
+      "main": [
+        [
+          {
+            "node": "Define Websites",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Define Websites": {
+      "main": [
+        [
+          {
+            "node": "Check Website Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Website Status": {
+      "main": [
+        [
+          {
+            "node": "Check Backup Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Backup Status": {
+      "main": [
+        [
+          {
+            "node": "Analyze Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Status": {
+      "main": [
+        [
+          {
+            "node": "Log to Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to Sheet": {
+      "main": [
+        [
+          {
+            "node": "Needs Alert?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Alert?": {
+      "main": [
+        [
+          {
+            "node": "Send Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Alert": {
+      "main": [
+        [
+          {
+            "node": "Send Slack Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Weekly Report Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Week Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Week Data": {
+      "main": [
+        [
+          {
+            "node": "Generate Weekly Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Weekly Report": {
+      "main": [
+        [
+          {
+            "node": "Send Weekly Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-12-19T10:00:00.000Z",
+      "updatedAt": "2024-12-19T10:00:00.000Z",
+      "id": "security-monitoring",
+      "name": "Security & Monitoring"
+    }
+  ],
+  "triggerCount": 2,
+  "updatedAt": "2024-12-19T10:00:00.000Z",
+  "versionId": "1"
+}
